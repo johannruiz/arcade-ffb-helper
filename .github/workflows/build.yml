@@ -73,7 +73,8 @@ jobs:
           exe="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
           echo "Running: $exe"
           set +e
-          perl -e 'alarm 240; exec @ARGV or die "exec failed: $!\n"' "$exe" > "$ARCADE_SELFTEST/app-output.txt" 2>&1
+          # exec { $ARGV[0] } @ARGV: run the path as-is (plain "exec @ARGV" splits it on spaces).
+          perl -e 'alarm 240; exec { $ARGV[0] } @ARGV or die "exec failed: $!\n"' "$exe" > "$ARCADE_SELFTEST/app-output.txt" 2>&1
           code=$?
           set -e
           tail -n 40 "$ARCADE_SELFTEST/app-output.txt"
