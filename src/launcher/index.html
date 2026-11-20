@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+  <title>Arcade Launcher</title>
+  <link rel="stylesheet" href="launcher.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <div>
+        <h1>Arcade Launcher</h1>
+        <p class="muted" data-i18n="app.tagline"></p>
+      </div>
+    </div>
+    <div class="chips">
+      <span class="chip" id="gpuChip" title="">GPU…</span>
+      <span class="chip" id="sdlChip">SDL3…</span>
+      <div class="lang" role="group" data-i18n-aria="lang.label">
+        <button type="button" data-lang="en" lang="en">EN</button>
+        <button type="button" data-lang="es" lang="es">ES</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="games" data-i18n-aria="games.title">
+      <div class="section-head">
+        <h2 data-i18n="games.title"></h2>
+        <label class="toggle"><input type="checkbox" id="fullscreen"><span data-i18n="games.fullscreen"></span></label>
+      </div>
+      <div id="gameGrid" class="game-grid"></div>
+      <p class="hint"><span data-i18n="games.hint"></span>
+        <button class="ghost small" id="clearCache" data-i18n="games.clearCache"></button></p>
+
+      <div class="panel telemetry" id="telemetryPanel" hidden>
+        <div class="section-head"><h2 data-i18n="live.title"></h2><span class="muted" id="telGame"></span></div>
+        <div class="meters" id="meters"></div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="panel">
+        <div class="section-head">
+          <h2 data-i18n="wheel.title"></h2>
+          <button class="ghost small" id="refreshDevices" data-i18n="wheel.search" data-i18n-title="wheel.searchTitle"></button>
+        </div>
+        <select id="deviceSelect" data-i18n-aria="wheel.title"></select>
+        <div id="deviceInfo" class="device-info muted" data-i18n="wheel.none"></div>
+        <div class="steer-preview" data-i18n-aria="wheel.position">
+          <div class="steer-track"><div class="steer-dot" id="steerDot"></div></div>
+          <div class="axes" id="axes"></div>
+        </div>
+        <div class="tests">
+          <button data-test="left" data-i18n="test.left"></button>
+          <button data-test="right" data-i18n="test.right"></button>
+          <button data-test="spring" data-i18n="test.spring"></button>
+          <button data-test="damper" data-i18n="test.damper"></button>
+          <button data-test="rumble" data-i18n="test.rumble"></button>
+          <button data-test="stop" class="ghost" data-i18n="test.stop"></button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="section-head">
+          <h2 data-i18n="ffb.title"></h2>
+          <label class="toggle"><input type="checkbox" id="ffbEnabled"><span data-i18n="ffb.enabled"></span></label>
+        </div>
+        <div id="sliders" class="sliders"></div>
+        <label class="toggle block"><input type="checkbox" id="sdlVirtualPad"><span data-i18n="ffb.virtualPad"></span></label>
+      </div>
+
+      <div class="panel">
+        <div class="section-head"><h2 data-i18n="gfx.title"></h2></div>
+        <label class="toggle block"><input type="checkbox" id="forceDedicated"><span data-i18n="gfx.force"></span></label>
+        <label class="field"><span data-i18n="gfx.angle"></span>
+          <select id="angle">
+            <option value="d3d11" data-i18n="gfx.angle.d3d11"></option>
+            <option value="metal" data-i18n="gfx.angle.metal"></option>
+            <option value="d3d11on12" data-i18n="gfx.angle.d3d11on12"></option>
+            <option value="vulkan" data-i18n="gfx.angle.vulkan"></option>
+            <option value="gl" data-i18n="gfx.angle.gl"></option>
+            <option value="default" data-i18n="gfx.angle.default"></option>
+          </select>
+        </label>
+        <div id="gpuList" class="gpu-list"></div>
+        <p class="muted small" id="gpuNote"></p>
+        <button id="restartBtn" class="accent" data-i18n="gfx.restart" hidden></button>
+      </div>
+      <div class="data-dir"><span class="muted small" id="dataDir"></span> <button class="ghost small" id="openData" data-i18n="data.open"></button></div>
+      <p class="muted small" id="versions"></p>
+    </aside>
+  </main>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script src="i18n.js"></script>
+  <script src="launcher.js"></script>
+</body>
+</html>

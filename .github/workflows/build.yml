@@ -1,0 +1,118 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # only used to attach files to a release when a v* tag is pushed
+
+jobs:
+  mac:
+    name: macOS (Apple Silicon + Intel)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build SDL3 force-feedback bridge (universal)
+        run: |
+          cmake -S native -B native/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build native/build --config Release -j 4
+          lipo -info bin/ffb_bridge
+          codesign -dv bin/ffb_bridge 2>&1 || true
+
+      - name: Smoke-test the bridge
+        run: printf 'list\nquit\n' | bin/ffb_bridge
+
+      - name: Package app (ad-hoc signed)
+        run: npx electron-builder --mac --publish never
+
+      - name: Verify signatures
+        run: |
+          for app in dist/mac*/"Arcade Launcher.app"; do
+            echo "== $app"
+            codesign --verify --deep --strict --verbose=2 "$app"
+            lipo -info "$app/Contents/Resources/bin/ffb_bridge"
+          done
+
+      - name: Self-test on macOS (launcher + the three games from GitHub Pages)
+        continue-on-error: true
+        env:
+          ARCADE_SELFTEST: ${{ runner.temp }}/selftest
+        run: |
+          perl -e 'alarm 240; exec @ARGV' "dist/mac-arm64/Arcade Launcher.app/Contents/MacOS/Arcade Launcher"
+          cat "$ARCADE_SELFTEST/report.json"
+
+      - name: Upload self-test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selftest-mac
+          path: ${{ runner.temp }}/selftest
+          if-no-files-found: ignore
+
+      - name: Upload macOS builds
+        uses: actions/upload-artifact@v4
+        with:
+          name: arcade-launcher-mac
+          path: |
+            dist/*.dmg
+            dist/*.zip
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.dmg
+            dist/*.zip
+
+  windows:
+    name: Windows (x64, portable)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build SDL3 force-feedback bridge
+        run: |
+          cmake -S native -B native/build -A x64
+          cmake --build native/build --config Release
+
+      - name: Smoke-test the bridge
+        shell: bash
+        run: printf 'list\nquit\n' | bin/ffb_bridge.exe
+
+      - name: Package portable folder
+        run: |
+          npx electron-builder --win dir --publish never
+          node scripts/make-portable.cjs
+          Compress-Archive -Path "release/Arcade Launcher" -DestinationPath "dist/Arcade-Launcher-win-x64-portable.zip"
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: arcade-launcher-windows
+          path: dist/Arcade-Launcher-win-x64-portable.zip
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Arcade-Launcher-win-x64-portable.zip

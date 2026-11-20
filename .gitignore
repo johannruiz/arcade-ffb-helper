@@ -1,0 +1,17 @@
+# Dependencies and build outputs
+node_modules/
+dist/
+release/
+bin/
+native/build/
+native/third_party/
+
+# User data: settings, Chromium profile, games' IndexedDB (ROMs, saves), offline copies
+portable-data/
+data/
+Arcade Launcher Data/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
