@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   mac:
-    name: macOS (Apple Silicon + Intel)
+    name: macOS (Apple Silicon)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
@@ -22,9 +22,25 @@ jobs:
           node-version: 24
           cache: npm
 
+      # SDL3 is compiled from source on macOS: keep the build between runs (only
+      # ffb_bridge.c is recompiled when it changes). Key changes with CMakeLists.txt.
+      - name: Cache SDL3 build
+        uses: actions/cache@v6
+        with:
+          path: native/build
+          key: sdl3-${{ runner.os }}-arm64-${{ hashFiles('native/CMakeLists.txt') }}
+
+      - name: Cache Electron downloads
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - run: npm ci
 
-      - name: Build SDL3 force-feedback bridge (universal)
+      - name: Build SDL3 force-feedback bridge
         run: |
           cmake -S native -B native/build -DCMAKE_BUILD_TYPE=Release
           cmake --build native/build --config Release -j 4
@@ -49,9 +65,16 @@ jobs:
         continue-on-error: true
         env:
           ARCADE_SELFTEST: ${{ runner.temp }}/selftest
+          ARCADE_TIMING: '1'
         run: |
-          perl -e 'alarm 240; exec @ARGV' "dist/mac-arm64/Arcade Launcher.app/Contents/MacOS/Arcade Launcher"
-          cat "$ARCADE_SELFTEST/report.json"
+          mkdir -p "$ARCADE_SELFTEST"
+          set +e
+          perl -e 'alarm 240; exec @ARGV' "dist/mac-arm64/Arcade Launcher.app/Contents/MacOS/Arcade Launcher" > "$ARCADE_SELFTEST/app-output.txt" 2>&1
+          code=$?
+          set -e
+          tail -n 40 "$ARCADE_SELFTEST/app-output.txt"
+          node scripts/ci-report.cjs "$ARCADE_SELFTEST" "$code"
+          exit $code
 
       - name: Upload self-test report
         if: always()
@@ -87,6 +110,15 @@ jobs:
         with:
           node-version: 24
           cache: npm
+
+      - name: Cache SDL3 + Electron downloads
+        uses: actions/cache@v6
+        with:
+          path: |
+            native/third_party
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: deps-${{ runner.os }}-${{ hashFiles('native/CMakeLists.txt', 'package-lock.json') }}
 
       - run: npm ci
 

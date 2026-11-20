@@ -358,17 +358,24 @@ app.whenReady().then(() => {
   createLauncher();
   void gpuInfo();
   if (settings.gpu.forceDedicated && process.platform === 'win32' && gpuPreference.state === 'already') ensureGpuPreference(false);
-  if (process.env.ARCADE_SELFTEST) selfTest(process.env.ARCADE_SELFTEST).catch(e => { console.error(e); app.exit(1); });
+  if (process.env.ARCADE_SELFTEST) selfTest(process.env.ARCADE_SELFTEST).catch(e => {
+    // Leave the reason on disk so CI can show it even when the test cannot finish.
+    try { fs.mkdirSync(process.env.ARCADE_SELFTEST, { recursive: true }); fs.writeFileSync(path.join(process.env.ARCADE_SELFTEST, 'report.json'), JSON.stringify({ fatal: String(e && e.stack || e), platform: process.platform }, null, 2)); } catch {}
+    console.error(e); app.exit(1);
+  });
 });
 
 // Automated check: opens each GitHub version, verifies adapter, GPU and isolation, saves screenshots.
 async function selfTest(outDir) {
   fs.mkdirSync(outDir, { recursive: true });
   const wait = ms => new Promise(r => setTimeout(r, ms));
-  const report = { gpu: await gpuInfo(), bridge: null, games: {} };
+  // Screenshots are best-effort (they can fail on headless CI machines).
+  const shot = async (wc, name) => { try { fs.writeFileSync(path.join(outDir, name), (await wc.capturePage()).toPNG()); } catch (e) { (report.captureErrors ||= []).push(`${name}: ${e.message}`); } };
+  const report = { platform: process.platform, arch: process.arch, data: portable, gpu: null, bridge: null, games: {} };
+  report.gpu = await gpuInfo();
   await wait(2500);
   report.bridge = bridge.status();
-  fs.writeFileSync(path.join(outDir, 'launcher.png'), (await launcherWin.webContents.capturePage()).toPNG());
+  await shot(launcherWin.webContents, 'launcher.png');
   // Both languages: screenshot + any text that is still a raw i18n key.
   const missingKeys = `[...document.querySelectorAll('body *')].filter(e => !e.children.length && /^[a-z]+(\\.[a-zA-Z0-9]+)+$/.test(e.textContent.trim())).map(e => e.textContent.trim())`;
   report.i18n = {};
@@ -376,7 +383,7 @@ async function selfTest(outDir) {
     await launcherWin.webContents.executeJavaScript(`document.querySelector('[data-lang="${lang}"]').click()`);
     await wait(500);
     report.i18n[lang] = await launcherWin.webContents.executeJavaScript(`({ htmlLang: document.documentElement.lang, play: document.querySelector('.play').textContent, missing: ${missingKeys} })`);
-    fs.writeFileSync(path.join(outDir, `launcher-${lang}.png`), (await launcherWin.webContents.capturePage()).toPNG());
+    await shot(launcherWin.webContents, `launcher-${lang}.png`);
   }
   report.i18n.saved = settings.ui.lang;
   if (process.env.ARCADE_SELFTEST_UI) { fs.writeFileSync(path.join(outDir, 'report.json'), JSON.stringify(report, null, 2)); app.exit(0); return; }
@@ -415,8 +422,7 @@ async function selfTest(outDir) {
         type: pids[m.pid] || m.type, mb: Math.round((m.memory?.workingSetSize || 0) / 1024),
         privateMb: Math.round((m.memory?.privateBytes || 0) / 1024),
       }));
-      try { fs.writeFileSync(path.join(outDir, `${g.id}.png`), (await gameWin.webContents.capturePage()).toPNG()); }
-      catch (e) { report.games[g.id].captureError = e.message; }
+      await shot(gameWin.webContents, `${g.id}.png`);
       gameWin.close();
       await wait(800);
     } catch (e) { report.games[g.id] = { error: e.message }; }

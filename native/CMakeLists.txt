@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.24)
 
-# macOS: one universal binary (Apple Silicon + Intel), runs on macOS 11+.
+# macOS: Apple Silicon only (pass -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" for a universal binary).
 if(APPLE)
   if(NOT CMAKE_OSX_ARCHITECTURES)
-    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
+    set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "" FORCE)
   endif()
   set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "" FORCE)
 endif()

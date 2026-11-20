@@ -33,7 +33,7 @@ Atajos dentro del juego: **F11** pantalla completa, **Ctrl+F5** recargar sin cac
 
 GitHub Actions compila la versión de Mac en cada push (workflow `Build`). Se descarga desde la pestaña **Actions** → artefacto `arcade-launcher-mac`. Si subes una etiqueta `v*`, los archivos se adjuntan también a la *Release*.
 
-- Hay `.dmg` y `.zip` para **Apple Silicon (arm64)** e **Intel (x64)**. El puente SDL3 (`ffb_bridge`) es universal y va enlazado estáticamente: no lleva dylibs.
+- Hay `.dmg` y `.zip` solo para **Apple Silicon** (M1 o posterior); los Mac Intel no están soportados. El puente SDL3 (`ffb_bridge`) va enlazado estáticamente: no lleva dylibs.
 - **Firma:** la app tiene firma *ad-hoc*, no está firmada por Apple. La primera vez macOS dirá que no puede verificar al desarrollador. Abre la app con clic derecho → **Abrir**. Si dice que está "dañada", ejecuta:
   ```
   xattr -cr "/ruta/a/Arcade Launcher.app"
