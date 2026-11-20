@@ -68,8 +68,12 @@ jobs:
           ARCADE_TIMING: '1'
         run: |
           mkdir -p "$ARCADE_SELFTEST"
+          ls -la dist
+          app=$(find dist -maxdepth 2 -name "*.app" -type d | head -n 1)
+          exe="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
+          echo "Running: $exe"
           set +e
-          perl -e 'alarm 240; exec @ARGV' "dist/mac-arm64/Arcade Launcher.app/Contents/MacOS/Arcade Launcher" > "$ARCADE_SELFTEST/app-output.txt" 2>&1
+          perl -e 'alarm 240; exec @ARGV or die "exec failed: $!\n"' "$exe" > "$ARCADE_SELFTEST/app-output.txt" 2>&1
           code=$?
           set -e
           tail -n 40 "$ARCADE_SELFTEST/app-output.txt"
