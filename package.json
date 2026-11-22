@@ -1,10 +1,65 @@
 {
   "name": "arcade-launcher",
   "productName": "Arcade Launcher",
-  "version": "1.0.2",
+  "version": "1.0.1",
   "description": "Launcher Electron para Daytona USA, Daytona USA 2 y Scud Race con GPU dedicada y force feedback por SDL3.",
   "main": "src/main.cjs",
   "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build:native": "cmake -S native -B native/build -DCMAKE_BUILD_TYPE=Release && cmake --build native/build --config Release",
+    "dist": "electron-builder --win dir && node scripts/make-portable.cjs",
+    "dist:mac": "electron-builder --mac --publish never",
+    "portable": "node scripts/make-portable.cjs",
+    "icons": "electron build/render-icons.cjs"
+  },
+  "build": {
+    "appId": "local.arcade.launcher",
+    "productName": "Arcade Launcher",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "bin",
+        "to": "bin"
+      }
+    ],
+    "win": {
+      "target": "dir",
+      "icon": "build/icon.png"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.games",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "artifactName": "Arcade-Launcher-${version}-mac-${arch}.${ext}",
+      "icon": "build/icon-mac.png"
+    },
+    "dmg": {
+      "sign": false
+    }
+  },
+  "devDependencies": {
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/johannruiz/arcade-launcher.git"
