@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arcade FFB Helper</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230d1220'/%3E%3Cpolygon points='12.5,78 27.5,78 51.5,22 36.5,22' fill='%23e8352b'/%3E%3Cpolygon points='30.5,78 45.5,78 69.5,22 54.5,22' fill='%231e7bff'/%3E%3Cpolygon points='48.5,78 63.5,78 87.5,22 72.5,22' fill='%23ffb000'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #0a0c11; --surface: #141821; --surface-2: #1b202b;
+  --line: rgba(255,255,255,.08); --line-strong: rgba(255,255,255,.16);
+  --text: #f3f5f9; --text-2: #aab1c0; --text-3: #6f7789;
+  --ok: #3ad29f; --warn: #f5b13d; --bad: #ff5d5d; --accent: #1e7bff;
+  --font: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.45 var(--font); -webkit-font-smoothing: antialiased; }
+button, select, input { font: inherit; color: inherit; }
+h1, h2 { margin: 0; font-weight: 600; }
+.wrap { max-width: 880px; margin: 0 auto; padding: 24px 16px 48px; display: grid; gap: 16px; }
+header { display: flex; align-items: center; gap: 12px; }
+header svg { width: 36px; height: 36px; flex: none; }
+header h1 { font-size: 18px; }
+header .ver { color: var(--text-3); font-size: 12px; }
+.conn { margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 13px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex: none; }
+.dot.ok { background: var(--ok); box-shadow: 0 0 0 4px rgba(58,210,159,.14); }
+.dot.warn { background: var(--warn); }
+.dot.bad { background: var(--bad); }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 12px; align-content: start; }
+.card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-3); }
+.big { font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.big span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub { color: var(--text-2); font-size: 13px; }
+.note { color: var(--text-2); font-size: 13px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+select { width: 100%; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+button { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; cursor: pointer; }
+button:hover { border-color: var(--line-strong); }
+button:active { transform: translateY(1px); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+/* meters */
+.meters { display: grid; gap: 10px; }
+.meter { display: grid; grid-template-columns: 110px 1fr 1fr 52px; gap: 10px; align-items: center; font-size: 13px; }
+.meter .lbl { color: var(--text-2); }
+.meter .val { color: var(--text-3); text-align: right; font-variant-numeric: tabular-nums; }
+.bar { position: relative; height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.bar i { position: absolute; top: 0; bottom: 0; left: 0; width: 0; background: var(--text-3); border-radius: 4px; transition: width .06s linear, left .06s linear; }
+.bar.out i { background: var(--accent); }
+.bar.bi::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--line-strong); }
+.legend { display: grid; grid-template-columns: 110px 1fr 1fr 52px; gap: 10px; font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; }
+.steer { position: relative; height: 22px; border-radius: 11px; background: var(--surface-2); }
+.steer i { position: absolute; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--text); left: calc(50% - 8px); transition: left .05s linear; }
+.steer::after { content: ""; position: absolute; left: 50%; top: 4px; bottom: 4px; width: 1px; background: var(--line-strong); }
+/* settings */
+.set { display: grid; grid-template-columns: 1fr 200px 48px; gap: 12px; align-items: center; padding: 6px 0; }
+.set + .set { border-top: 1px solid var(--line); }
+.help { display: block; color: var(--text-3); font-size: 12px; }
+.set output { color: var(--text-2); text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.switch { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 6px 0; }
+.switch + .switch, .set + .switch, .switch + .set { border-top: 1px solid var(--line); }
+.switch input { appearance: none; width: 40px; height: 22px; border-radius: 11px; background: var(--surface-2); border: 1px solid var(--line-strong); position: relative; cursor: pointer; margin: 0; }
+.switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--text-2); transition: left .15s; }
+.switch input:checked { background: var(--accent); border-color: var(--accent); }
+.switch input:checked::after { left: 20px; background: #fff; }
+a.btn { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; color: inherit; text-decoration: none; }
+a.btn:hover { border-color: var(--line-strong); }
+.steps { margin: 0; padding-left: 20px; color: var(--text-2); font-size: 13px; display: grid; gap: 4px; }
+.dir { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 13px; }
+.dir strong { font-weight: 600; }
+.dir.todo .help { color: var(--warn); }
+details summary { cursor: pointer; color: var(--text-2); font-size: 13px; padding: 4px 0; }
+details[open] summary { margin-bottom: 8px; }
+input[type=text] { width: 100%; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.offline { position: fixed; inset: 0; background: rgba(10,12,17,.86); display: grid; place-items: center; text-align: center; padding: 16px; }
+@media (max-width: 560px) {
+  .set { grid-template-columns: 1fr 48px; }
+  .set input[type=range] { grid-column: 1 / -1; grid-row: 2; }
+  .meter, .legend { grid-template-columns: 76px 1fr 1fr 40px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="22" fill="#0d1220"/><polygon points="12.5,78 27.5,78 51.5,22 36.5,22" fill="#e8352b"/><polygon points="30.5,78 45.5,78 69.5,22 54.5,22" fill="#1e7bff"/><polygon points="48.5,78 63.5,78 87.5,22 72.5,22" fill="#ffb000"/></svg>
+    <div><h1>Arcade FFB Helper</h1><div class="ver" id="ver"></div></div>
+    <div class="conn"><span class="dot" id="connDot"></span><span id="connText"></span></div>
+  </header>
+
+  <div class="cards">
+    <section class="card">
+      <h2 data-t="game.title"></h2>
+      <div class="big"><span class="dot" id="gameDot"></span><span id="gameName"></span></div>
+      <div class="sub" id="gameSub"></div>
+    </section>
+    <section class="card">
+      <h2 data-t="wheel.title"></h2>
+      <div class="big"><span class="dot" id="wheelDot"></span><span id="wheelName"></span></div>
+      <select id="device" aria-label="Device"></select>
+      <div class="steer" id="steerBox" title=""><i id="steer"></i></div>
+      <div id="dirRow" class="dir">
+        <div><strong data-t="dir.title"></strong><span class="help" id="dirState"></span></div>
+        <div class="row"><button id="calibrate" data-t="dir.check"></button><button id="flipdir" data-t="dir.flip"></button></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="note" id="noWheel" hidden data-t="wheel.none"></div>
+
+  <section class="card" id="forcesCard">
+    <h2 data-t="forces.title"></h2>
+    <div class="legend"><span></span><span data-t="forces.game"></span><span data-t="forces.wheel"></span><span></span></div>
+    <div class="meters" id="meters"></div>
+  </section>
+
+  <section class="card" id="settingsCard">
+    <h2 data-t="settings.title"></h2>
+    <label class="switch"><span><span data-t="s.enabled"></span><span class="help" data-t="s.enabled.help"></span></span><input type="checkbox" data-key="enabled"></label>
+    <div id="mainSliders"></div>
+    <div class="row" style="padding-top:8px">
+      <span class="sub" data-t="test.title" style="margin-right:4px"></span>
+      <button data-test="left" data-t="test.left"></button>
+      <button data-test="right" data-t="test.right"></button>
+      <button data-test="spring" data-t="test.spring"></button>
+      <button data-test="damper" data-t="test.damper"></button>
+      <button data-test="rumble" data-t="test.rumble"></button>
+      <button data-test="stop" data-t="test.stop"></button>
+    </div>
+    <details>
+      <summary data-t="s.fine"></summary>
+      <div id="fineSliders"></div>
+    </details>
+    <details>
+      <summary data-t="s.perGame"></summary>
+      <label class="switch"><span data-t="s.invert.d1"></span><input type="checkbox" data-key="invert_d1"></label>
+      <label class="switch"><span data-t="s.invert.d2"></span><input type="checkbox" data-key="invert_d2"></label>
+      <label class="switch"><span data-t="s.invert.scud"></span><input type="checkbox" data-key="invert_scud"></label>
+    </details>
+    <details>
+      <summary data-t="s.advanced"></summary>
+      <label class="switch"><span><span data-t="s.openOnStart"></span><span class="help" data-t="s.openOnStart.help"></span></span><input type="checkbox" data-key="openOnStart"></label>
+      <div style="padding:6px 0"><span data-t="s.origins"></span><span class="help" data-t="s.origins.help" style="margin-bottom:6px"></span><input type="text" id="origins" spellcheck="false" placeholder="https://example.org"></div>
+      <div class="row" style="padding-top:6px"><button id="reset" data-t="s.reset"></button></div>
+    </details>
+  </section>
+
+  <section class="card" id="reportCard">
+    <h2 data-t="report.title"></h2>
+    <p class="sub" style="margin:0" data-t="report.help"></p>
+    <ol class="steps">
+      <li data-t="report.step1"></li>
+      <li data-t="report.step2"></li>
+    </ol>
+    <div class="row">
+      <a class="btn" id="reportDownload" href="/report" download data-t="report.download"></a>
+      <button id="reportCopy" data-t="report.copy"></button>
+      <button id="reportIssue" data-t="report.issue"></button>
+      <span class="sub" id="reportStatus" role="status"></span>
+    </div>
+  </section>
+</div>
+<div class="offline" id="offline" hidden><div><h1 data-t="off.title"></h1><p class="sub" data-t="off.help"></p></div></div>
+
+<script>
+'use strict';
+const T = {
+  en: {
+    'conn.ok': 'Running', 'conn.off': 'Not running',
+    'game.title': 'Game', 'game.none': 'Waiting for a game', 'game.noneHelp': 'Open Daytona USA, Daytona USA 2 or Scud Race in this browser and turn on “FFB Helper” in its settings.',
+    'game.live': 'Racing · forces live', 'game.idle': 'Connected · menu or pause', 'game.more': '{n} games connected; the one racing drives the wheel.',
+    'wheel.title': 'Wheel', 'wheel.missing': 'No device found', 'wheel.auto': 'Automatic (first wheel with force feedback)',
+    'wheel.ffb': 'Force feedback ready', 'wheel.none': 'This device has no wheel force feedback. A gamepad keeps the game\'s own vibration; nothing to set here.',
+    'forces.title': 'Forces', 'forces.game': 'From the game', 'forces.wheel': 'To the wheel',
+    'f.constant': 'Torque', 'f.spring': 'Spring', 'f.damper': 'Damper', 'f.friction': 'Friction', 'f.rumble': 'Vibration',
+    'settings.title': 'Settings',
+    's.enabled': 'Force feedback', 's.enabled.help': 'Off: the wheel gets no force from the games.',
+    's.strength': 'Overall strength', 's.deviceGain': 'Device gain', 's.deviceGain.help': 'The wheel\'s own gain, applied by its driver.',
+    's.minSpring': 'Centring spring while racing', 's.minForce': 'Minimum force', 's.minForce.help': 'Overcomes the wheel\'s dead zone around the centre.',
+    's.smoothing': 'Smoothing',
+    's.fine': 'Fine tuning', 's.constantGain': 'Torque', 's.springGain': 'Game spring', 's.damperGain': 'Damper', 's.frictionGain': 'Friction', 's.rumbleGain': 'Vibration',
+    's.perGame': 'Per game', 's.invert.d1': 'Daytona USA: invert force direction', 's.invert.d2': 'Daytona USA 2: invert force direction', 's.invert.scud': 'Scud Race: invert force direction',
+    's.advanced': 'Advanced', 's.openOnStart': 'Open this page when the helper starts', 's.openOnStart.help': 'The tray icon opens it any time.',
+    's.origins': 'Other game addresses', 's.origins.help': 'Origins allowed besides johannruiz.github.io and localhost, separated by commas.',
+    's.reset': 'Restore defaults',
+    'test.title': 'Test', 'test.left': '◀ Push', 'test.right': 'Push ▶', 'test.spring': 'Spring', 'test.damper': 'Damper', 'test.rumble': 'Vibration', 'test.stop': 'Stop',
+    'off.title': 'The helper is not running', 'off.help': 'Start Arcade FFB Helper again; this page reconnects by itself.',
+    'steer': 'Wheel position',
+    'dir.title': 'Force direction', 'dir.check': 'Check direction', 'dir.flip': 'Invert',
+    'dir.unknown': 'Not checked on this wheel yet: the usual direction is used, which is wrong on some models. Let go of the wheel and press Check direction.',
+    'dir.ok': 'Checked on this wheel. “◀ Push” must turn it to the left.',
+    'dir.running': 'Measuring… do not touch the wheel. It moves a little each way.',
+    'dir.nomove': 'The wheel did not move: let go of it, make sure it is not at full lock, and try again.',
+    'dir.unsupported': 'This device has no constant force to measure with.',
+    'report.title': 'Something not working?',
+    'report.help': 'The report has the helper and system versions, your wheel and what it supports, the games connected, these settings and the helper\'s log. It has no personal files or folder names, and nothing is sent unless you send it.',
+    'report.step1': 'Reproduce the problem (a race, a test), then download the report.',
+    'report.step2': 'Report it on GitHub and attach the file, saying what you expected and what happened.',
+    'report.download': 'Download report', 'report.copy': 'Copy report', 'report.issue': 'Report on GitHub',
+    'report.copied': 'Copied. Paste it in your report.', 'report.copyFail': 'Could not copy: download it instead.',
+  },
+  es: {
+    'conn.ok': 'En marcha', 'conn.off': 'Detenido',
+    'game.title': 'Juego', 'game.none': 'Esperando un juego', 'game.noneHelp': 'Abre Daytona USA, Daytona USA 2 o Scud Race en este navegador y activa «FFB Helper» en sus ajustes.',
+    'game.live': 'En carrera · fuerzas en vivo', 'game.idle': 'Conectado · menú o pausa', 'game.more': '{n} juegos conectados; manda el que está en carrera.',
+    'wheel.title': 'Volante', 'wheel.missing': 'Ningún dispositivo', 'wheel.auto': 'Automático (el primer volante con force feedback)',
+    'wheel.ffb': 'Force feedback listo', 'wheel.none': 'Este dispositivo no tiene force feedback de volante. Un mando conserva la vibración propia del juego; aquí no hay nada que ajustar.',
+    'forces.title': 'Fuerzas', 'forces.game': 'Del juego', 'forces.wheel': 'Al volante',
+    'f.constant': 'Par', 'f.spring': 'Muelle', 'f.damper': 'Amortiguación', 'f.friction': 'Fricción', 'f.rumble': 'Vibración',
+    'settings.title': 'Ajustes',
+    's.enabled': 'Force feedback', 's.enabled.help': 'Desactivado: el volante no recibe fuerzas de los juegos.',
+    's.strength': 'Fuerza general', 's.deviceGain': 'Ganancia del dispositivo', 's.deviceGain.help': 'La ganancia propia del volante, la aplica su driver.',
+    's.minSpring': 'Muelle de centrado en carrera', 's.minForce': 'Fuerza mínima', 's.minForce.help': 'Supera la zona muerta del volante alrededor del centro.',
+    's.smoothing': 'Suavizado',
+    's.fine': 'Ajuste fino', 's.constantGain': 'Par', 's.springGain': 'Muelle del juego', 's.damperGain': 'Amortiguación', 's.frictionGain': 'Fricción', 's.rumbleGain': 'Vibración',
+    's.perGame': 'Por juego', 's.invert.d1': 'Daytona USA: invertir el sentido de la fuerza', 's.invert.d2': 'Daytona USA 2: invertir el sentido de la fuerza', 's.invert.scud': 'Scud Race: invertir el sentido de la fuerza',
+    's.advanced': 'Avanzado', 's.openOnStart': 'Abrir esta página al iniciar el helper', 's.openOnStart.help': 'El icono de la bandeja la abre en cualquier momento.',
+    's.origins': 'Otras direcciones de juegos', 's.origins.help': 'Orígenes permitidos además de johannruiz.github.io y localhost, separados por comas.',
+    's.reset': 'Restaurar valores',
+    'test.title': 'Probar', 'test.left': '◀ Empujar', 'test.right': 'Empujar ▶', 'test.spring': 'Muelle', 'test.damper': 'Amortiguación', 'test.rumble': 'Vibración', 'test.stop': 'Parar',
+    'off.title': 'El helper no está en marcha', 'off.help': 'Vuelve a abrir Arcade FFB Helper; esta página se reconecta sola.',
+    'steer': 'Posición del volante',
+    'dir.title': 'Sentido de la fuerza', 'dir.check': 'Comprobar sentido', 'dir.flip': 'Invertir',
+    'dir.unknown': 'Aún sin comprobar en este volante: se usa el sentido habitual, que en algunos modelos es el contrario. Suelta el volante y pulsa Comprobar sentido.',
+    'dir.ok': 'Comprobado en este volante. «◀ Empujar» debe girarlo hacia la izquierda.',
+    'dir.running': 'Midiendo… no toques el volante. Se moverá un poco a cada lado.',
+    'dir.nomove': 'El volante no se movió: suéltalo, comprueba que no esté en el tope y repite.',
+    'dir.unsupported': 'Este dispositivo no tiene fuerza constante con la que medir.',
+    'report.title': '¿Algo no funciona?',
+    'report.help': 'El informe incluye las versiones del helper y del sistema, tu volante y lo que admite, los juegos conectados, estos ajustes y el registro del helper. No incluye archivos personales ni nombres de carpetas, y no se envía nada si tú no lo envías.',
+    'report.step1': 'Reproduce el problema (una carrera, una prueba) y descarga el informe.',
+    'report.step2': 'Repórtalo en GitHub y adjunta el archivo, contando qué esperabas y qué pasó.',
+    'report.download': 'Descargar informe', 'report.copy': 'Copiar informe', 'report.issue': 'Reportar en GitHub',
+    'report.copied': 'Copiado. Pégalo en tu reporte.', 'report.copyFail': 'No se pudo copiar: descárgalo.',
+  },
+};
+const lang = (navigator.language || 'en').toLowerCase().startsWith('es') ? 'es' : 'en';
+document.documentElement.lang = lang;
+const t = (k, v = {}) => (T[lang][k] ?? T.en[k] ?? k).replace(/\{(\w+)\}/g, (_, n) => v[n]);
+for (const el of document.querySelectorAll('[data-t]')) el.textContent = t(el.dataset.t);
+const $ = id => document.getElementById(id);
+$('steerBox').title = t('steer');
+
+const GAMES = { d1: 'Daytona USA', d2: 'Daytona USA 2', scud: 'Scud Race' };
+const FORCES = ['constant', 'spring', 'damper', 'friction', 'rumble'];
+
+// Sliders: key, min, max, step, shown as % (factor) and help
+const MAIN = [['strength', 0, 1.5, .05], ['deviceGain', 0, 100, 1, 1], ['minSpring', 0, .5, .01], ['minForce', 0, .3, .01], ['smoothing', 0, .9, .05]];
+const FINE = [['constantGain', 0, 2, .05], ['springGain', 0, 2, .05], ['damperGain', 0, 2, .05], ['frictionGain', 0, 2, .05], ['rumbleGain', 0, 2, .05]];
+const fmt = (key, v) => key === 'deviceGain' ? Math.round(v) + '%' : Math.round(v * 100) + '%';
+function slider(parent, [key, min, max, step]) {
+  const help = T[lang]['s.' + key + '.help'] ? `<span class="help">${t('s.' + key + '.help')}</span>` : '';
+  const row = document.createElement('label');
+  row.className = 'set';
+  row.innerHTML = `<span>${t('s.' + key)}${help}</span><input type="range" min="${min}" max="${max}" step="${step}" data-key="${key}"><output></output>`;
+  parent.append(row);
+}
+MAIN.forEach(s => slider($('mainSliders'), s));
+FINE.forEach(s => slider($('fineSliders'), s));
+
+for (const f of FORCES) {
+  const m = document.createElement('div');
+  m.className = 'meter';
+  const bi = f === 'constant' ? ' bi' : '';
+  m.innerHTML = `<span class="lbl">${t('f.' + f)}</span><div class="bar${bi}"><i data-raw="${f}"></i></div><div class="bar out${bi}"><i data-out="${f}"></i></div><span class="val" data-val="${f}"></span>`;
+  $('meters').append(m);
+}
+function setBar(el, v, bipolar) {
+  if (bipolar) {
+    const w = Math.min(1, Math.abs(v)) * 50;
+    el.style.left = (v < 0 ? 50 - w : 50) + '%';
+    el.style.width = w + '%';
+  } else { el.style.left = '0'; el.style.width = Math.min(1, Math.max(0, v)) * 100 + '%'; }
+}
+
+let ws, state = null, editing = null;
+const send = m => { if (ws?.readyState === 1) ws.send(m); };
+
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws/ui`);
+  ws.onmessage = e => {
+    if (!e.data.startsWith('state ')) return;
+    state = JSON.parse(e.data.slice(6));
+    render();
+  };
+  ws.onopen = () => { $('offline').hidden = true; setConn(true); };
+  ws.onclose = () => { setConn(false); $('offline').hidden = false; setTimeout(connect, 1500); };
+}
+function setConn(ok) {
+  $('connDot').className = 'dot ' + (ok ? 'ok' : 'bad');
+  $('connText').textContent = t(ok ? 'conn.ok' : 'conn.off');
+}
+
+let lastDevices = '';
+function render() {
+  const s = state;
+  $('ver').textContent = `v${s.version} · SDL ${s.sdl}`;
+  // game
+  const games = s.games;
+  const g = games.find(x => x.active) || games[0];
+  $('gameDot').className = 'dot ' + (g ? (g.live ? 'ok' : 'warn') : '');
+  $('gameName').textContent = g ? (GAMES[g.id] || g.id || '?') : t('game.none');
+  $('gameSub').textContent = !g ? t('game.noneHelp') : (games.length > 1 ? t('game.more', { n: games.length }) + ' ' : '') + t(g.live ? 'game.live' : 'game.idle');
+  // device
+  const d = s.device;
+  $('wheelDot').className = 'dot ' + (d ? (d.wheel ? 'ok' : 'warn') : 'bad');
+  $('wheelName').textContent = d ? d.name : t('wheel.missing');
+  const devKey = JSON.stringify(s.devices) + s.settings.device;
+  if (devKey !== lastDevices && document.activeElement !== $('device')) {
+    lastDevices = devKey;
+    const sel = $('device');
+    sel.innerHTML = '';
+    sel.append(new Option(t('wheel.auto'), ''));
+    const names = new Set();
+    for (const x of s.devices) if (!names.has(x.name)) { names.add(x.name); sel.append(new Option(x.name + (x.constant ? '' : x.haptic ? ' · rumble' : ''), x.name)); }
+    if (s.settings.device && !names.has(s.settings.device)) sel.append(new Option(s.settings.device + ' (—)', s.settings.device));
+    sel.value = s.settings.device;
+  }
+  const wheel = !!d?.wheel;
+  $('noWheel').hidden = !d || wheel;
+  $('forcesCard').hidden = $('settingsCard').hidden = !!d && !wheel;
+  $('steerBox').hidden = !d;
+  $('dirRow').hidden = !wheel;
+  if (wheel) {
+    const c = s.calib;
+    const key = c.running ? 'dir.running' : c.result === 'nomove' ? 'dir.nomove' : c.result === 'unsupported' ? 'dir.unsupported' : d.dir ? 'dir.ok' : 'dir.unknown';
+    $('dirState').textContent = t(key);
+    $('dirRow').classList.toggle('todo', !d.dir || c.result === 'nomove');
+    $('calibrate').disabled = $('flipdir').disabled = c.running;
+  }
+  const ax = d?.axes?.[0] ?? 0;
+  $('steer').style.left = `calc(${(ax + 1) * 50}% - 8px)`;
+  // forces
+  const raw = g?.raw || [0, 0, 0, 0, 0];
+  FORCES.forEach((f, i) => {
+    setBar(document.querySelector(`[data-raw="${f}"]`), raw[i], i === 0);
+    setBar(document.querySelector(`[data-out="${f}"]`), s.out[i], i === 0);
+    document.querySelector(`[data-val="${f}"]`).textContent = Math.round(s.out[i] * 100);
+  });
+  // settings
+  for (const el of document.querySelectorAll('[data-key]')) {
+    const k = el.dataset.key, v = s.settings[k];
+    if (el === editing) continue;
+    if (el.type === 'checkbox') el.checked = !!v;
+    else { el.value = v; el.nextElementSibling.textContent = fmt(k, v); }
+  }
+  if (document.activeElement !== $('origins')) $('origins').value = s.settings.origins;
+}
+
+for (const el of document.querySelectorAll('[data-key]')) {
+  const k = el.dataset.key;
+  if (el.type === 'checkbox') el.addEventListener('change', () => send(`set ${k} ${el.checked ? 1 : 0}`));
+  else {
+    el.addEventListener('pointerdown', () => { editing = el; });
+    el.addEventListener('input', () => { editing = el; el.nextElementSibling.textContent = fmt(k, +el.value); send(`set ${k} ${el.value}`); });
+    el.addEventListener('change', () => { editing = null; });
+    el.addEventListener('blur', () => { editing = null; });
+  }
+}
+$('device').addEventListener('change', e => { send('device ' + e.target.value); e.target.blur(); });
+$('origins').addEventListener('change', e => send('set origins ' + e.target.value.trim()));
+$('reset').addEventListener('click', () => send('reset'));
+$('calibrate').addEventListener('click', () => send('calibrate'));
+$('reportCopy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(await (await fetch('/report')).text());
+    $('reportStatus').textContent = t('report.copied');
+  } catch { $('reportStatus').textContent = t('report.copyFail'); }
+});
+// A new issue in the launcher's repository, with a short summary; the full report goes as an attachment.
+$('reportIssue').addEventListener('click', () => {
+  const s = state, g = s?.games.find(x => x.active) || s?.games[0];
+  const title = `FFB Helper: ${s?.device?.name || 'no wheel'}`;
+  const body = [
+    '**What happened**', '', '', '**What you expected**', '', '',
+    '**Report file**', 'Drag the downloaded arcade-ffb-helper-report-….txt here.', '',
+    '---',
+    `Helper ${s?.version || '?'} · SDL ${s?.sdl || '?'} · ${navigator.userAgentData?.platform || navigator.platform}`,
+    `Wheel: ${s?.device ? `${s.device.name} (force feedback: ${s.device.wheel ? 'yes' : 'no'}, direction ${s.device.dir ? 'checked' : 'not checked'})` : 'none'}`,
+    `Game: ${g ? `${GAMES[g.id] || g.id} (${g.live ? 'racing' : 'menu'})` : 'none connected'}`,
+  ].join('\n');
+  window.open('https://github.com/johannruiz/arcade-ffb-helper/issues/new?labels=ffb-helper&title=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(body), '_blank', 'noopener');
+});
+$('flipdir').addEventListener('click', () => send('flipdir'));
+for (const b of document.querySelectorAll('[data-test]')) b.addEventListener('click', () => send('test ' + b.dataset.test));
+connect();
+</script>
+</body>
+</html>

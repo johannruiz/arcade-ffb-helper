@@ -1,12 +1,14 @@
-# Dependencies and build outputs
+# Build outputs
+build/
+out/
+
+# Left over from the Electron launcher (removed 2026-11-21; it lives in git history).
+# Kept so local copies of its builds and its portable data are never committed.
 node_modules/
 dist/
 release/
 bin/
-native/build/
-native/third_party/
-
-# User data: settings, Chromium profile, games' IndexedDB (ROMs, saves), offline copies
+native/
 portable-data/
 data/
 Arcade Launcher Data/

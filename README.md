@@ -1,112 +1,123 @@
-# Arcade Launcher
+# Arcade FFB Helper
 
-Launcher Electron para **Daytona USA**, **Daytona USA 2** y **Scud Race** (versiones publicadas en GitHub Pages) que:
+Un programa pequeño que da force feedback al volante mientras juegas a Daytona USA 2 o Scud Race **en tu propio navegador** (Chrome o Edge).
 
-1. **Fuerza la GPU dedicada**
-   - Pasa `force_high_performance_gpu` a Chromium.
-   - Registra la preferencia de Windows "Alto rendimiento" para el ejecutable (`HKCU\Software\Microsoft\DirectX\UserGpuPreferences`).
-   - Fuerza `powerPreference: 'high-performance'` en WebGPU y WebGL.
-2. **Da force feedback real al volante mediante SDL3.** Lee la "drive board" emulada de cada juego (el motor del volante de la cabina arcade) y la envía a `ffb_bridge.exe`. Ese ejecutable abre el volante con `SDL_Haptic` y aplica fuerza constante, resorte, amortiguador, fricción y vibración.
+**Descarga:** [última versión](https://github.com/johannruiz/arcade-ffb-helper/releases/latest).
+- **Windows:** `ArcadeFFBHelper.exe`, un solo archivo de unos 2,5 MB. No hay que instalar nada.
+- **macOS (Apple Silicon):** `Arcade-FFB-Helper-mac-arm64.zip`, que contiene la app.
 
-## Usar (portable)
+Hace solo esto:
+- dice si hay un juego conectado y si está en carrera;
+- muestra las fuerzas que envía el juego y las que llegan al volante;
+- reúne todos los ajustes del volante y de sus fuerzas: dispositivo, sentido de la fuerza, fuerza, ganancias, muelle de centrado, fuerza mínima, suavizado, invertir por juego y pruebas.
 
-```
-release\Arcade Launcher\Arcade Launcher.exe
-```
+La asignación de controles (qué eje es el volante, pedales, botones) se queda en la interfaz de cada juego, que ya lee el volante con la Gamepad API del navegador.
 
-La carpeta `release\Arcade Launcher` es autocontenida: puedes copiarla o moverla a otro disco o a una USB.
+## Uso
 
-- **Dónde guarda todo:** en `data\`, junto al `.exe`: ajustes, perfil de Chromium, caché HTTP y de shaders, y el IndexedDB donde los juegos guardan ROMs y partidas.
-- **Primera ejecución:** copia lo que hubiera en `%APPDATA%\Arcade Launcher`, sin las cachés. El original no se borra.
-- **Carpeta de solo lectura** (p. ej. `Program Files`): vuelve a usar `%APPDATA%`. **Ajustes → Almacenamiento** indica dónde están los datos.
-- **Lo único fuera de la carpeta:** la preferencia de GPU de Windows (registro `HKCU\...\UserGpuPreferences`, por ruta del `.exe`). Si mueves la carpeta, se registra de nuevo en el primer arranque.
-- **En desarrollo** (`npm start`), los datos van a `portable-data\`.
-
-1. Conecta el volante. Se detecta en caliente. Arriba a la derecha se ven la GPU en uso y el mando reconocido; al pulsar el mando (o **C**) se abre su panel: elegirlo, probar empujar, muelle y vibración, y ajustar la fuerza.
-2. Elige el juego en la biblioteca (flechas, o la cruceta del volante) y pulsa **Jugar** (Enter, o el primer botón del volante). La primera vez, carga la ROM desde el menú del juego; el juego la guarda.
-3. Asigna el volante en el menú de controles del juego, como siempre.
-4. Si el volante empuja al revés, activa **Invertir el sentido de la fuerza** para ese juego en el panel del mando.
-
-Los iconos de la biblioteca son los favicons de cada juego en GitHub Pages; se guardan en `data/icons/` para verse sin conexión. Un juego sin favicon muestra un icono provisional.
-
-**Avanzado → Exponerlo también como mando SDL3** (desactivado por defecto) añade una copia del volante leída por SDL3, `SDL3 <nombre> (Arcade Launcher)`. Solo hace falta si el juego no lista el volante o este tiene más de 32 botones; si no, el juego lo vería dos veces.
-
-Atajos dentro del juego: **F11** pantalla completa, **Ctrl+F5** recargar sin caché, **Ctrl+F12** DevTools.
-
-## macOS
-
-GitHub Actions compila la versión de Mac en cada push (workflow `Build`). Se descarga desde la pestaña **Actions** → artefacto `arcade-launcher-mac`. Si subes una etiqueta `v*`, los archivos se adjuntan también a la *Release*.
-
-- Hay `.dmg` y `.zip` solo para **Apple Silicon** (M1 o posterior); los Mac Intel no están soportados. El puente SDL3 (`ffb_bridge`) va enlazado estáticamente: no lleva dylibs.
-- **Firma:** la app tiene firma *ad-hoc*, no está firmada por Apple. La primera vez macOS dirá que no puede verificar al desarrollador. Abre la app con clic derecho → **Abrir**. Si dice que está "dañada", ejecuta:
-  ```
-  xattr -cr "/ruta/a/Arcade Launcher.app"
-  ```
-- **Datos:**
-  - Si dejas la app en su propia carpeta, guarda todo en una carpeta **Arcade Launcher Data** junto al `.app`, en modo portable.
-  - Si la mueves a `/Aplicaciones`, usa `~/Library/Application Support/Arcade Launcher`.
-- **GPU:** en Mac con dos GPU se pide la de alto rendimiento. WebGPU y WebGL van sobre Metal.
-- **Force feedback en Mac:** depende de que el volante tenga driver de force feedback para macOS (IOKit ForceFeedback). Algunos modelos de Logitech y Thrustmaster lo tienen y otros no. Usa los botones de prueba del panel **Wheel**.
-
-Compilar en un Mac a mano: `npm ci && npm run build:native && npm run dist:mac`.
-
-## Jugar sin Internet
-
-**Cómo se guarda la copia:**
-- Cada vez que abres un juego con conexión, el launcher guarda en segundo plano una copia en `data\offline\<juego>\` (D1 ~10 MB, D2 ~36 MB, Scud ~24 MB). También puedes guardarla con **Save now** en la tarjeta.
-- La lista de archivos sale del árbol del repo en GitHub. Cada archivo se verifica contra su SHA de git.
-- Si el repo no cambió, actualizarla cuesta una sola llamada a la API de GitHub.
-
-**Cómo se usa:**
-- Sin conexión, la copia se sirve en la misma dirección (`johannruiz.github.io/...`). Así el juego encuentra la ROM y las partidas que guardó en su IndexedDB.
-- La tarjeta indica "Offline ready · versión · tamaño · fecha", y el juego en marcha muestra **PLAYING · OFFLINE**.
-- El multijugador (PeerJS/Firebase) necesita conexión; el modo de un jugador funciona sin ella.
-
-## Actualizaciones
-
-Los juegos se actualizan solos: se cargan desde GitHub Pages. El launcher se actualiza desde las **Releases** de este repositorio, solo cuando se publica una etiqueta `v*`, nunca con un push sin etiqueta.
-
-1. Al arrancar, y cada 6 horas, consulta la última Release. Si es más nueva, descarga el zip de su sistema y comprueba su SHA-256 contra el que publica GitHub.
-2. Lo descomprime en `data/updates/<versión>/` y muestra arriba **"vX lista · Reiniciar"**. Nunca instala sin que lo pidas.
-3. Al reiniciar, la versión nueva se ejecuta desde esa carpeta en modo "aplicar":
-   - espera a que se cierre el launcher;
-   - aparta el programa viejo como copia de seguridad;
-   - copia el nuevo, sin tocar la carpeta `data` (ajustes, ROMs, partidas, copias sin conexión);
-   - abre el launcher instalado.
-4. Si la versión nueva no abre su ventana en 45 s, se restaura la anterior y esa versión ya no se vuelve a ofrecer. El registro queda en `data/updates/update.log`.
-
-En **Ajustes → Acerca de** se ve el estado, se puede buscar a mano y desactivar la descarga automática. Situaciones en las que no se actualiza:
-- en desarrollo (`npm start`);
-- si la carpeta es de solo lectura;
-- en macOS, si la app se ejecuta desde una ubicación aislada temporal (por ejemplo, abierta directamente desde Descargas); hay que moverla a Aplicaciones.
-
-Para publicar una versión: sube `version` en `package.json`, haz commit y empuja una etiqueta `vX.Y.Z`. GitHub Actions compila y adjunta los archivos a la Release, y los launchers instalados la reciben.
-
-## Fuentes de force feedback por juego
-
-| Juego | URL | Señal |
-|---|---|---|
-| Daytona USA | johannruiz.github.io/Daytona-USA-Web-multiplayer-test | `_daytona_wheel_force()` (con signo) → constante; `_daytona_wheel_resistance()` → amortiguador; rumble → vibración |
-| Daytona USA 2 | johannruiz.github.io/daytona-usa-2-web | `window.arcadeForceFeedback.read()` (con `game: 'd2'`), desde la versión 0.10.2, que ejecuta el programa de su drive board: par → constante, vibración → seno. Muelle, amortiguador y fricción valen 0, porque esta placa centra el volante con el par; se aplica el resorte base. Todo vale 0 en pausa o en menús. Con páginas anteriores, palabra 14 (`wheelForce`) → constante y palabras 12-13 → vibración. |
-| Scud Race | johannruiz.github.io/scudrace-plus-web | `window.arcadeForceFeedback.read()` (desde la versión 0.11): las fuerzas del programa de la drive board. Par → constante, muelle → resorte, vibración → seno; amortiguador y fricción en 0, porque la placa no los tiene. Todo vale 0 en pausa o en menús. En versiones anteriores, palabras 14-17. La velocidad del coche (RAM 0x1045A0 + 52) da el resorte base. |
-
-La fuerza solo se envía con la ventana del juego enfocada. Además hay un watchdog: si el juego deja de enviar durante 300 ms, la fuerza vuelve a 0.
+1. Abre `ArcadeFFBHelper.exe` (en Mac, la app). Queda un icono en la bandeja del sistema (en la barra de menús en Mac) y se abre su página de ajustes en `http://127.0.0.1:47823/`.
+2. Con el volante conectado y **suelto**, pulsa **Comprobar sentido** en la tarjeta «Volante». Basta una vez por volante.
+3. Abre el juego, por ejemplo [Daytona USA 2](https://johannruiz.github.io/daytona-usa-2-web/). En Ajustes → Experimental, activa **Force feedback with FFB Helper**.
+4. La primera vez, Chrome pregunta si el sitio puede acceder a apps de este dispositivo (acceso a la red local). Hay que permitirlo. Si se deniega, se reactiva en el icono a la izquierda de la dirección → Configuración del sitio.
 
 ## Cómo funciona
 
-- `src/main.cjs`: proceso principal. Configura la GPU, gestiona las ventanas, el IPC y el watchdog.
-- `src/remote.cjs`: añade COOP/COEP a D2 y Scud, que necesitan `SharedArrayBuffer`; GitHub Pages no puede enviar cabeceras. Así no hace falta `coi-sw.js` ni recargar la página.
-- `src/game/preload.cjs` + `src/game/adapter.js`: el adaptador se ejecuta en la página antes que cualquier script del juego (`contextBridge.executeInMainWorld`). Captura el módulo WASM, lee la drive board a 125 Hz, da forma a las fuerzas y expone el volante SDL3 como mando.
-- `src/sdl-bridge.cjs` ↔ `bin/ffb_bridge.exe` (`native/ffb_bridge.c`, SDL 3.4.20): protocolo de texto por stdin/stdout. Ver la cabecera de `ffb_bridge.c`.
+```
+Página del juego (Chrome)                    Arcade FFB Helper (bandeja del sistema)
+window.arcadeForceFeedback.read()  ──ws──▶  127.0.0.1:47823/ws/game
+  cada 8 ms: f <live> <par> <muelle>         aplica los ajustes y manda los efectos
+             <amort.> <fricción> <vibración>  por SDL3 (DirectInput / HIDAPI lg4ff en Mac)
+                                     ◀──── hi <versión> <volante 0|1> <dispositivo>
+
+Página de ajustes  http://127.0.0.1:47823/  ──ws──▶  /ws/ui (estado a 20 Hz, cambios)
+```
+
+- La página del juego solo reenvía sus fuerzas. El helper las ajusta: fuerza, par mínimo, suavizado, muelle base, ganancias e invertir.
+- Si la página deja de enviar durante 300 ms (pestaña congelada o en segundo plano, suspensión), el helper pone todas las fuerzas a 0 por su cuenta.
+- A un mando sin efectos de volante no se le envía nada: conserva la vibración propia del juego.
+- **Sentido de la fuerza, medido en cada volante.** El signo de una fuerza constante no es el mismo en todos los volantes ni drivers. La convención de SDL (la dirección es de dónde viene la fuerza) hace que un nivel positivo empuje a la izquierda, y así se ha medido en un Moza y un G923 por DirectInput; en un G29 se ha visto el contrario.
+  - «Comprobar sentido» da, con el volante suelto, un empujón corto de cada lado y lee el eje de la dirección.
+  - Guarda el resultado por nombre de volante (`direction=` en `settings.ini`); «Invertir» lo corrige a mano.
+  - Mientras no se haya comprobado, se usa el sentido de SDL.
+  - El convenio del juego (+ = derecha) está comprobado en Daytona USA 2: al girar a la derecha, el par medio es −0,40, es decir, centra el volante.
+- Los ajustes se guardan en `%APPDATA%\Arcade FFB Helper\settings.ini`, con los registros (`helper.log`, `helper-previous.log`) en la misma carpeta. En macOS están en `~/Library/Application Support/Arcade FFB Helper/`.
+- El icono de la bandeja tiene «Force feedback settings» y «Quit». Si el helper se abre por segunda vez, muestra la página de ajustes del que ya está en marcha.
+- `--background` arranca sin abrir la página (para el inicio automático).
+
+## Reportar problemas
+
+La página de ajustes tiene la sección **¿Algo no funciona?**:
+- **Descargar informe** / **Copiar informe:** genera `arcade-ffb-helper-report-<fecha>.txt` (`GET /report`). Incluye:
+  - las versiones del helper, de SDL y del sistema;
+  - el volante en uso, con sus IDs USB, sus efectos y los errores al actualizarlos;
+  - el sentido de la fuerza, medido o no;
+  - todos los dispositivos que ve SDL;
+  - los juegos conectados con sus fuerzas actuales;
+  - los ajustes;
+  - el registro de esta sesión (últimas 600 líneas) y de la anterior.
+- **Reportar en GitHub:** abre un issue en este repositorio con un resumen y la indicación de adjuntar el archivo.
+
+El helper no envía nada por sí mismo, y las rutas de la carpeta del usuario aparecen como `~` o `<settings>/`.
+
+El registro anota:
+- el arranque y el sistema;
+- los dispositivos que aparecen (nombre, `vid:pid`, efectos);
+- el volante abierto y los efectos creados;
+- los fallos al actualizar efectos;
+- las pruebas y la comprobación del sentido;
+- los juegos que se conectan;
+- cada 10 s de carrera, un resumen: par máximo del juego y del volante, signo usado, muelle y vibración.
+
+## Seguridad
+
+- Solo escucha en `127.0.0.1`.
+- `/ws/game` solo acepta los orígenes `https://johannruiz.github.io`, `http://localhost:*` y `http://127.0.0.1:*`, más los que se añadan en Ajustes → Avanzado. Cualquier otra web recibe 403 y no puede mover el volante.
+- La página de ajustes, `/report` y `/ws/ui` solo responden a su propio origen y a `Host: 127.0.0.1:47823` o `localhost:47823`, lo que protege contra el DNS rebinding.
+
+## Integración en las páginas de los juegos
+
+1. Incluir `client/arcade-ffb-helper.js` en la página, tal cual, con un `<script>` o un `import`. No hace nada hasta que el jugador lo activa.
+2. Añadir en los ajustes del juego un interruptor que llame a `arcadeFfbHelper.enable()` o `disable()`. Su estado se muestra con `arcadeFfbHelper.onChange((status, info) => …)`:
+   - `connected`: muestra el nombre del volante (`info.device`) o «sin force feedback» si `info.wheel` es false;
+   - `waiting`: «Abre Arcade FFB Helper»;
+   - abrir el juego con `?ffb=helper` también lo activa.
+3. La página tiene que exponer `window.arcadeForceFeedback` v1 (`read()` → `{constant, spring, damper, friction, rumble, live}`, constant −1..1 con + = derecha, `live` a false en menús, pausa o pestaña oculta).
+
+| Juego | `arcadeForceFeedback` | Opción FFB Helper |
+|---|---|---|
+| Daytona USA 2 | desde 0.10.2 | desde 0.10.3 (Ajustes → Experimental) |
+| Scud Race Plus | desde 0.11 | pendiente |
+| Daytona USA | pendiente | pendiente |
 
 ## Compilar
 
-```
-npm install
-npm run build:native   # CMake + Visual Studio 2022 → bin/ffb_bridge.exe + SDL3.dll
-npm run dist           # → dist/win-unpacked y luego release/Arcade Launcher (actualiza el programa sin tocar data\)
+```powershell
+cmake -S . -B build
+cmake --build build --config Release
 ```
 
-Icono: el original es `build/icon.svg` (tres franjas, un color por juego), y `build/icon-mac.svg` es la versión con el margen y la sombra de macOS. `npm run icons` genera con Electron `build/icon.png` (el `.exe`), `build/icon-mac.png` (el `.icns`) y `src/assets/icon.png` (las ventanas). Cada juego usa su propio favicon en su ventana; mientras no lo tenga, usa el del launcher.
+El resultado queda en `out/`: `ArcadeFFBHelper.exe` en Windows y `Arcade FFB Helper.app` en macOS.
+- SDL3 3.4.20 se descarga y se compila dentro del ejecutable.
+- En Windows el runtime de C también va dentro, así que no hace falta el Visual C++ Redistributable.
+- La página de ajustes (`ui/index.html`) se incrusta al compilar.
+- `assets/icon.ico` se genera con `node tools/make-ico.cjs`.
 
-Prueba automática: define la variable `ARCADE_SELFTEST=<carpeta>` y ejecuta la app. Abre los tres juegos y guarda `report.json` y capturas en esa carpeta.
+Para probar sin juego, `client/test.html` simula un juego (par senoidal, muelle, pulsos de vibración). Sírvelo en `http://localhost:<puerto>/`.
+
+Para publicar una versión: sube `VERSION` en `project()` de `CMakeLists.txt`, haz commit y empuja una etiqueta `vX.Y.Z`. GitHub Actions compila y adjunta el exe y la app a la Release.
+
+## Estado
+
+Probado en Windows 11 sin volante conectado:
+- conexión con Daytona USA 2 en Chrome (par ±0,65 en carrera, 0 en pausa);
+- ajustes, pruebas, informe;
+- rechazo de orígenes y hosts ajenos.
+
+Falta probar:
+- un volante real (G29, G923, Thrustmaster, Fanatec, Moza…);
+- macOS;
+- Safari y Firefox.
+
+## Historial
+
+Este repositorio fue antes **Arcade Launcher**, un launcher en Electron para los mismos juegos. Se retiró el 2026-11-21 en favor de este helper; su código sigue en el historial de git (hasta el commit `9c2cf4a`).

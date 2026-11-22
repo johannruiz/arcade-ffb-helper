@@ -1,0 +1,29 @@
+// Windows resources: icon and version information (version from CMake: HELPER_VERSION_*).
+#include <winver.h>
+
+1 ICON "icon.ico"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION HELPER_VERSION_MAJOR, HELPER_VERSION_MINOR, HELPER_VERSION_PATCH, 0
+PRODUCTVERSION HELPER_VERSION_MAJOR, HELPER_VERSION_MINOR, HELPER_VERSION_PATCH, 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904b0"
+    BEGIN
+      VALUE "CompanyName", "Johann Ruiz"
+      VALUE "FileDescription", "Arcade FFB Helper"
+      VALUE "FileVersion", HELPER_VERSION_STRING
+      VALUE "InternalName", "ArcadeFFBHelper"
+      VALUE "OriginalFilename", "ArcadeFFBHelper.exe"
+      VALUE "ProductName", "Arcade FFB Helper"
+      VALUE "ProductVersion", HELPER_VERSION_STRING
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END
