@@ -14,7 +14,7 @@ endif()
 # Windows: the C runtime inside the exe too (no Visual C++ Redistributable needed).
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-project(arcade_ffb_helper VERSION 0.1.0 LANGUAGES C)
+project(arcade_ffb_helper VERSION 0.1.1 LANGUAGES C)
 
 set(SDL3_VERSION 3.4.20)
 set(OUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/out")

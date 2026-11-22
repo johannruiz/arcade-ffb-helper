@@ -88,7 +88,12 @@ static int make_effect(FfbDevice *d, SDL_HapticEffect *e) {
     if (!SDL_HapticEffectSupported(d->haptic, e)) return -1;
     int id = SDL_CreateHapticEffect(d->haptic, e);
     if (id < 0) { SDL_Log("effect type %u create failed: %s", (unsigned)e->type, SDL_GetError()); return -1; }
-    if (!SDL_RunHapticEffect(d->haptic, id, SDL_HAPTIC_INFINITY))
+    /* One iteration of an effect whose length is SDL_HAPTIC_INFINITY already plays until stopped
+     * (DirectInput, macOS, Linux). SDL_HAPTIC_INFINITY iterations must not be used: SDL 3.4's
+     * Logitech driver (lg4ff over HIDAPI, which takes the G29/G920/G27... on macOS and Linux)
+     * passes it on as an int, reads -1 and stops the effect instead, so the wheel never moved
+     * on a Mac (G29 report, 2026-11-22). Still true in SDL main as of that date. */
+    if (!SDL_RunHapticEffect(d->haptic, id, 1))
         SDL_Log("effect type %u run failed: %s", (unsigned)e->type, SDL_GetError());
     return id;
 }
