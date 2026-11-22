@@ -6,54 +6,151 @@
   <title>Arcade Launcher</title>
   <link rel="stylesheet" href="launcher.css">
 </head>
-<body>
-  <header class="top">
-    <div class="brand">
-      <span class="logo" aria-hidden="true"></span>
-      <div>
-        <h1>Arcade Launcher</h1>
-        <p class="muted" data-i18n="app.tagline"></p>
-      </div>
-    </div>
-    <div class="chips">
-      <span class="chip" id="gpuChip" title="">GPU…</span>
-      <span class="chip" id="sdlChip">SDL3…</span>
-      <div class="lang" role="group" data-i18n-aria="lang.label">
-        <button type="button" data-lang="en" lang="en">EN</button>
-        <button type="button" data-lang="es" lang="es">ES</button>
-      </div>
+<body data-view="library">
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-gpu" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2.5"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
+    <symbol id="i-wheel" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="13" r="2.2"/><path d="M3.4 10.5c3-1.4 5.9-1.9 8.6-1.9s5.6.5 8.6 1.9M10.2 14.6 7 20M13.8 14.6 17 20"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+    <symbol id="i-cabinet" viewBox="0 0 24 24"><path d="M7 2h10l1 4v15H6V6z"/><rect x="8.5" y="6.5" width="7" height="5.5" rx=".8"/><path d="M6 15h12M9.5 15v-1.6M9.5 13.4h0M14 14.2h1.6"/><circle cx="9.5" cy="13" r="1"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  </svg>
+
+  <div class="backdrop" aria-hidden="true"><div class="art" id="art"></div></div>
+
+  <header class="bar">
+    <nav class="tabs" role="tablist" data-i18n-aria="nav.label">
+      <button role="tab" data-view="library" data-i18n="nav.library"></button>
+      <button role="tab" data-view="settings" data-i18n="nav.settings"></button>
+    </nav>
+    <div class="status">
+      <button class="update-pill" id="updatePill" hidden><i class="dot ok"></i><span id="updatePillText"></span></button>
+      <span class="stat" id="gpuStat"><svg class="ico"><use href="#i-gpu"/></svg><span class="label" id="gpuLabel"></span></span>
+      <button class="stat device" id="deviceStat" data-i18n-title="device.open">
+        <svg class="ico"><use href="#i-wheel"/></svg><i class="dot" id="deviceDot"></i><span class="label" id="deviceLabel"></span>
+        <svg class="ico gear"><use href="#i-gear"/></svg>
+      </button>
     </div>
   </header>
 
-  <main class="layout">
-    <section class="games" data-i18n-aria="games.title">
-      <div class="section-head">
-        <h2 data-i18n="games.title"></h2>
-        <label class="toggle"><input type="checkbox" id="fullscreen"><span data-i18n="games.fullscreen"></span></label>
-      </div>
-      <div id="gameGrid" class="game-grid"></div>
-      <p class="hint"><span data-i18n="games.hint"></span>
-        <button class="ghost small" id="clearCache" data-i18n="games.clearCache"></button></p>
-
-      <div class="panel telemetry" id="telemetryPanel" hidden>
-        <div class="section-head"><h2 data-i18n="live.title"></h2><span class="muted" id="telGame"></span></div>
-        <div class="meters" id="meters"></div>
-      </div>
-    </section>
-
-    <aside class="side">
-      <div class="panel">
-        <div class="section-head">
-          <h2 data-i18n="wheel.title"></h2>
-          <button class="ghost small" id="refreshDevices" data-i18n="wheel.search" data-i18n-title="wheel.searchTitle"></button>
+  <!-- Library ------------------------------------------------------------ -->
+  <main class="view library" id="view-library">
+    <section class="hero">
+      <div class="hero-main">
+        <h1><span id="gTitle"></span> <small id="gVersion"></small></h1>
+        <p class="desc" id="gDesc"></p>
+        <div class="actions">
+          <button class="play" id="playBtn"><svg class="ico"><use href="#i-play"/></svg><span></span></button>
+          <span class="running" id="gRunning" hidden></span>
         </div>
-        <select id="deviceSelect" data-i18n-aria="wheel.title"></select>
-        <div id="deviceInfo" class="device-info muted" data-i18n="wheel.none"></div>
-        <div class="steer-preview" data-i18n-aria="wheel.position">
-          <div class="steer-track"><div class="steer-dot" id="steerDot"></div></div>
+        <p class="note" id="gNote" hidden></p>
+        <div class="live" id="live" hidden>
+          <span class="live-label" id="liveLabel"></span>
+          <div class="force" data-i18n-aria="meter.constant"><b id="liveForce"></b></div>
+        </div>
+      </div>
+      <dl class="facts" id="gFacts"></dl>
+    </section>
+    <section class="shelf" id="shelf" role="listbox" data-i18n-aria="nav.library"></section>
+  </main>
+
+  <!-- Settings ----------------------------------------------------------- -->
+  <main class="view settings" id="view-settings" hidden>
+    <div class="settings-col">
+      <section class="group">
+        <h2 data-i18n="set.general"></h2>
+        <div class="row">
+          <div><b data-i18n="set.language"></b></div>
+          <div class="seg" role="group" data-i18n-aria="set.language">
+            <button type="button" data-lang="en" lang="en">English</button>
+            <button type="button" data-lang="es" lang="es">Español</button>
+          </div>
+        </div>
+        <label class="row">
+          <div><b data-i18n="set.fullscreen"></b><small data-i18n="set.fullscreen.help"></small></div>
+          <input type="checkbox" class="switch" id="fullscreen">
+        </label>
+        <div class="row">
+          <div><b data-i18n="set.latest"></b><small data-i18n="set.latest.help"></small></div>
+          <button id="clearCache" data-i18n="set.latest.button"></button>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2 data-i18n="set.graphics"></h2>
+        <label class="row">
+          <div><b data-i18n="gfx.force"></b><small id="gpuNote"></small></div>
+          <input type="checkbox" class="switch" id="forceDedicated">
+        </label>
+        <div class="row">
+          <div><b data-i18n="gfx.detected"></b></div>
+          <div class="gpu-list" id="gpuList"></div>
+        </div>
+        <div class="row notice" id="restartRow" hidden>
+          <div><b data-i18n="gfx.restartNeeded"></b></div>
+          <button class="primary" id="restartBtn" data-i18n="gfx.restart"></button>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2 data-i18n="set.offline"></h2>
+        <p class="group-help" data-i18n="set.offline.help"></p>
+        <div id="offlineList"></div>
+      </section>
+
+      <section class="group">
+        <h2 data-i18n="set.storage"></h2>
+        <div class="row">
+          <div><b id="dataKind"></b><small class="path" id="dataDir"></small></div>
+          <button id="openData" data-i18n="data.open"></button>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2 data-i18n="set.about"></h2>
+        <div class="row">
+          <div><b data-i18n="update.title"></b><small id="updateStatus"></small></div>
+          <button id="updateBtn" hidden></button>
+        </div>
+        <label class="row" id="updateAutoRow">
+          <div><b data-i18n="update.auto"></b><small data-i18n="update.auto.help"></small></div>
+          <input type="checkbox" class="switch" id="updateAuto">
+        </label>
+        <div id="repoList"></div>
+        <p class="group-help" id="versions"></p>
+      </section>
+    </div>
+  </main>
+
+  <footer class="hints" id="hints"></footer>
+
+  <!-- Device sheet ------------------------------------------------------- -->
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
+    <header class="sheet-head">
+      <div>
+        <h2 class="eyebrow" data-i18n="device.title"></h2>
+        <h3 id="sheetTitle"></h3>
+        <p class="muted" id="deviceSummary"></p>
+      </div>
+      <button class="icon-btn" id="closeSheet" data-i18n-aria="device.close"><svg class="ico"><use href="#i-close"/></svg></button>
+    </header>
+    <div class="sheet-body">
+      <section class="group">
+        <div class="row">
+          <div><b data-i18n="device.select"></b><small data-i18n="device.autoHelp"></small></div>
+          <div class="inline">
+            <select id="deviceSelect" data-i18n-aria="device.select"></select>
+            <button id="refreshDevices" data-i18n="device.scan" data-i18n-title="device.scanTitle"></button>
+          </div>
+        </div>
+        <div class="steer" id="steer" data-i18n-aria="device.position">
+          <div class="steer-track"><i class="steer-mid"></i><b id="steerDot"></b></div>
           <div class="axes" id="axes"></div>
         </div>
-        <div class="tests">
+        <div class="fx" id="fxTags"></div>
+        <div class="tests" id="tests">
+          <span class="muted" data-i18n="test.title"></span>
           <button data-test="left" data-i18n="test.left"></button>
           <button data-test="right" data-i18n="test.right"></button>
           <button data-test="spring" data-i18n="test.spring"></button>
@@ -61,38 +158,44 @@
           <button data-test="rumble" data-i18n="test.rumble"></button>
           <button data-test="stop" class="ghost" data-i18n="test.stop"></button>
         </div>
-      </div>
+      </section>
 
-      <div class="panel">
-        <div class="section-head">
-          <h2 data-i18n="ffb.title"></h2>
-          <label class="toggle"><input type="checkbox" id="ffbEnabled"><span data-i18n="ffb.enabled"></span></label>
-        </div>
-        <div id="sliders" class="sliders"></div>
-        <label class="toggle block"><input type="checkbox" id="sdlVirtualPad"><span data-i18n="ffb.virtualPad"></span></label>
-      </div>
+      <p class="group-help no-ffb" id="noFfb" hidden></p>
 
-      <div class="panel">
-        <div class="section-head"><h2 data-i18n="gfx.title"></h2></div>
-        <label class="toggle block"><input type="checkbox" id="forceDedicated"><span data-i18n="gfx.force"></span></label>
-        <label class="field"><span data-i18n="gfx.angle"></span>
-          <select id="angle">
-            <option value="d3d11" data-i18n="gfx.angle.d3d11"></option>
-            <option value="metal" data-i18n="gfx.angle.metal"></option>
-            <option value="d3d11on12" data-i18n="gfx.angle.d3d11on12"></option>
-            <option value="vulkan" data-i18n="gfx.angle.vulkan"></option>
-            <option value="gl" data-i18n="gfx.angle.gl"></option>
-            <option value="default" data-i18n="gfx.angle.default"></option>
-          </select>
+      <section class="group" id="ffbGroup">
+        <h2 data-i18n="ffb.title"></h2>
+        <label class="row">
+          <div><b data-i18n="ffb.enabled"></b><small data-i18n="ffb.enabled.help"></small></div>
+          <input type="checkbox" class="switch" id="ffbEnabled">
         </label>
-        <div id="gpuList" class="gpu-list"></div>
-        <p class="muted small" id="gpuNote"></p>
-        <button id="restartBtn" class="accent" data-i18n="gfx.restart" hidden></button>
-      </div>
-      <div class="data-dir"><span class="muted small" id="dataDir"></span> <button class="ghost small" id="openData" data-i18n="data.open"></button></div>
-      <p class="muted small" id="versions"></p>
-    </aside>
-  </main>
+        <div id="slidersMain"></div>
+        <details class="more">
+          <summary data-i18n="ffb.fine"></summary>
+          <div id="slidersFine"></div>
+        </details>
+      </section>
+
+      <section class="group" id="perGameGroup">
+        <h2 data-i18n="ffb.perGame"></h2>
+        <div id="perGame"></div>
+      </section>
+
+      <section class="group" id="liveGroup">
+        <h2 data-i18n="ffb.live"></h2>
+        <p class="group-help" id="telState"></p>
+        <div class="meters" id="meters"></div>
+      </section>
+
+      <details class="group more">
+        <summary data-i18n="device.advanced"></summary>
+        <label class="row">
+          <div><b data-i18n="device.virtualPad"></b><small data-i18n="device.virtualPad.help"></small></div>
+          <input type="checkbox" class="switch" id="sdlVirtualPad">
+        </label>
+      </details>
+    </div>
+  </aside>
+
   <div id="toast" class="toast" role="status" hidden></div>
   <script src="i18n.js"></script>
   <script src="launcher.js"></script>

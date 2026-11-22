@@ -106,7 +106,15 @@ class SdlBridge extends EventEmitter {
   setGain(g) { this.send(`gain ${Math.round(Math.max(0, Math.min(100, g)))}`); }
 
   // values: constant, spring, damper, friction, rumble, center
+  // A device with wheel effects. A plain gamepad gets nothing from here: the games drive its
+  // vibration themselves, and a stream of zero rumble from SDL would cancel theirs.
+  hasWheelFfb() {
+    const o = this.opened;
+    return !!(o && o.haptic && o.effects && ['constant', 'spring', 'damper', 'friction', 'sine'].some(k => o.effects[k]));
+  }
+
   ffb(v) {
+    if (!this.hasWheelFfb()) return;
     const f = x => (Number.isFinite(x) ? x : 0).toFixed(3);
     const line = `ffb ${f(v[0])} ${f(v[1])} ${f(v[2])} ${f(v[3])} ${f(v[4])} ${f(v[5] || 0)}`;
     const now = Date.now();

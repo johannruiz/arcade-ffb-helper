@@ -18,14 +18,18 @@ La carpeta `release\Arcade Launcher` es autocontenida: puedes copiarla o moverla
 
 - **Dónde guarda todo:** en `data\`, junto al `.exe`: ajustes, perfil de Chromium, caché HTTP y de shaders, y el IndexedDB donde los juegos guardan ROMs y partidas.
 - **Primera ejecución:** copia lo que hubiera en `%APPDATA%\Arcade Launcher`, sin las cachés. El original no se borra.
-- **Carpeta de solo lectura** (p. ej. `Program Files`): vuelve a usar `%APPDATA%`. El pie del launcher indica dónde están los datos.
+- **Carpeta de solo lectura** (p. ej. `Program Files`): vuelve a usar `%APPDATA%`. **Ajustes → Almacenamiento** indica dónde están los datos.
 - **Lo único fuera de la carpeta:** la preferencia de GPU de Windows (registro `HKCU\...\UserGpuPreferences`, por ruta del `.exe`). Si mueves la carpeta, se registra de nuevo en el primer arranque.
 - **En desarrollo** (`npm start`), los datos van a `portable-data\`.
 
-1. Conecta el volante. Se detecta en caliente; en el panel **Volante** puedes elegirlo y probar empujar, resorte y vibración.
-2. Pulsa **JUGAR**. La primera vez, carga la ROM desde el menú del juego; el juego la guarda.
-3. Asigna el volante en el menú de controles del juego, como siempre. Si Chromium no lo lee bien, activa "Exponer el volante SDL3 como mando extra": aparece como `SDL3 <nombre> (Arcade Launcher)`.
-4. Ajusta la fuerza con los deslizadores. Si el volante empuja al revés, marca **Invertir dirección de la fuerza** en esa tarjeta.
+1. Conecta el volante. Se detecta en caliente. Arriba a la derecha se ven la GPU en uso y el mando reconocido; al pulsar el mando (o **C**) se abre su panel: elegirlo, probar empujar, muelle y vibración, y ajustar la fuerza.
+2. Elige el juego en la biblioteca (flechas, o la cruceta del volante) y pulsa **Jugar** (Enter, o el primer botón del volante). La primera vez, carga la ROM desde el menú del juego; el juego la guarda.
+3. Asigna el volante en el menú de controles del juego, como siempre.
+4. Si el volante empuja al revés, activa **Invertir el sentido de la fuerza** para ese juego en el panel del mando.
+
+Los iconos de la biblioteca son los favicons de cada juego en GitHub Pages; se guardan en `data/icons/` para verse sin conexión. Un juego sin favicon muestra un icono provisional.
+
+**Avanzado → Exponerlo también como mando SDL3** (desactivado por defecto) añade una copia del volante leída por SDL3, `SDL3 <nombre> (Arcade Launcher)`. Solo hace falta si el juego no lista el volante o este tiene más de 32 botones; si no, el juego lo vería dos veces.
 
 Atajos dentro del juego: **F11** pantalla completa, **Ctrl+F5** recargar sin caché, **Ctrl+F12** DevTools.
 
@@ -41,7 +45,7 @@ GitHub Actions compila la versión de Mac en cada push (workflow `Build`). Se de
 - **Datos:**
   - Si dejas la app en su propia carpeta, guarda todo en una carpeta **Arcade Launcher Data** junto al `.app`, en modo portable.
   - Si la mueves a `/Aplicaciones`, usa `~/Library/Application Support/Arcade Launcher`.
-- **GPU:** en Mac con dos GPU se pide la de alto rendimiento. WebGPU va sobre Metal, y el selector de ANGLE ofrece Metal y OpenGL.
+- **GPU:** en Mac con dos GPU se pide la de alto rendimiento. WebGPU y WebGL van sobre Metal.
 - **Force feedback en Mac:** depende de que el volante tenga driver de force feedback para macOS (IOKit ForceFeedback). Algunos modelos de Logitech y Thrustmaster lo tienen y otros no. Usa los botones de prueba del panel **Wheel**.
 
 Compilar en un Mac a mano: `npm ci && npm run build:native && npm run dist:mac`.
@@ -58,13 +62,33 @@ Compilar en un Mac a mano: `npm ci && npm run build:native && npm run dist:mac`.
 - La tarjeta indica "Offline ready · versión · tamaño · fecha", y el juego en marcha muestra **PLAYING · OFFLINE**.
 - El multijugador (PeerJS/Firebase) necesita conexión; el modo de un jugador funciona sin ella.
 
+## Actualizaciones
+
+Los juegos se actualizan solos: se cargan desde GitHub Pages. El launcher se actualiza desde las **Releases** de este repositorio, solo cuando se publica una etiqueta `v*`, nunca con un push sin etiqueta.
+
+1. Al arrancar, y cada 6 horas, consulta la última Release. Si es más nueva, descarga el zip de su sistema y comprueba su SHA-256 contra el que publica GitHub.
+2. Lo descomprime en `data/updates/<versión>/` y muestra arriba **"vX lista · Reiniciar"**. Nunca instala sin que lo pidas.
+3. Al reiniciar, la versión nueva se ejecuta desde esa carpeta en modo "aplicar":
+   - espera a que se cierre el launcher;
+   - aparta el programa viejo como copia de seguridad;
+   - copia el nuevo, sin tocar la carpeta `data` (ajustes, ROMs, partidas, copias sin conexión);
+   - abre el launcher instalado.
+4. Si la versión nueva no abre su ventana en 45 s, se restaura la anterior y esa versión ya no se vuelve a ofrecer. El registro queda en `data/updates/update.log`.
+
+En **Ajustes → Acerca de** se ve el estado, se puede buscar a mano y desactivar la descarga automática. Situaciones en las que no se actualiza:
+- en desarrollo (`npm start`);
+- si la carpeta es de solo lectura;
+- en macOS, si la app se ejecuta desde una ubicación aislada temporal (por ejemplo, abierta directamente desde Descargas); hay que moverla a Aplicaciones.
+
+Para publicar una versión: sube `version` en `package.json`, haz commit y empuja una etiqueta `vX.Y.Z`. GitHub Actions compila y adjunta los archivos a la Release, y los launchers instalados la reciben.
+
 ## Fuentes de force feedback por juego
 
 | Juego | URL | Señal |
 |---|---|---|
 | Daytona USA | johannruiz.github.io/Daytona-USA-Web-multiplayer-test | `_daytona_wheel_force()` (con signo) → constante; `_daytona_wheel_resistance()` → amortiguador; rumble → vibración |
-| Daytona USA 2 | johannruiz.github.io/daytona-usa-2-web | bloque de control palabra 14 (`wheelForce`) → constante; palabras 12-13 → vibración |
-| Scud Race | johannruiz.github.io/scudrace-plus-web | palabras 14-17: centrado → resorte, fricción → fricción, vibración → seno, roll → constante; velocidad del coche (RAM 0x1045A0 + 52) → resorte base |
+| Daytona USA 2 | johannruiz.github.io/daytona-usa-2-web | `window.arcadeForceFeedback.read()` (con `game: 'd2'`), desde la versión 0.10.2, que ejecuta el programa de su drive board: par → constante, vibración → seno. Muelle, amortiguador y fricción valen 0, porque esta placa centra el volante con el par; se aplica el resorte base. Todo vale 0 en pausa o en menús. Con páginas anteriores, palabra 14 (`wheelForce`) → constante y palabras 12-13 → vibración. |
+| Scud Race | johannruiz.github.io/scudrace-plus-web | `window.arcadeForceFeedback.read()` (desde la versión 0.11): las fuerzas del programa de la drive board. Par → constante, muelle → resorte, vibración → seno; amortiguador y fricción en 0, porque la placa no los tiene. Todo vale 0 en pausa o en menús. En versiones anteriores, palabras 14-17. La velocidad del coche (RAM 0x1045A0 + 52) da el resorte base. |
 
 La fuerza solo se envía con la ventana del juego enfocada. Además hay un watchdog: si el juego deja de enviar durante 300 ms, la fuerza vuelve a 0.
 
@@ -82,5 +106,7 @@ npm install
 npm run build:native   # CMake + Visual Studio 2022 → bin/ffb_bridge.exe + SDL3.dll
 npm run dist           # → dist/win-unpacked y luego release/Arcade Launcher (actualiza el programa sin tocar data\)
 ```
+
+Icono: el original es `build/icon.svg` (tres franjas, un color por juego), y `build/icon-mac.svg` es la versión con el margen y la sombra de macOS. `npm run icons` genera con Electron `build/icon.png` (el `.exe`), `build/icon-mac.png` (el `.icns`) y `src/assets/icon.png` (las ventanas). Cada juego usa su propio favicon en su ventana; mientras no lo tenga, usa el del launcher.
 
 Prueba automática: define la variable `ARCADE_SELFTEST=<carpeta>` y ejecuta la app. Abre los tres juegos y guarda `report.json` y capturas en esa carpeta.

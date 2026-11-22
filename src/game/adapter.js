@@ -52,6 +52,7 @@ module.exports = function arcadeAdapter() {
       },
     });
   }
+  let boardSeen = false;   // the page runs its drive board program (Daytona USA 2, Scud Race)
   const readers = {
     d1() {
       const m = d1Module;
@@ -62,7 +63,21 @@ module.exports = function arcadeAdapter() {
       return { constant: clamp(force, -1, 1), spring: 0, damper: clamp(resistance, 0, 1), friction: 0, rumble: clamp(rumble, 0, 1), speed: null, live: !overlayOpen() };
     },
     d2() {
+      // Since the Daytona USA 2 web page runs its drive board's Z80 program (2026-11-21), the page
+      // gives that board's own forces, as Scud: window.arcadeForceFeedback.read() (constant -1..1,
+      // + = right; spring, damper, friction, rumble 0..1; live false and all 0 in pause and menus).
+      // This board centres the wheel with its torque: spring stays 0 (the base spring applies).
+      // The API is used once the board's program has been seen running (host.ffb[7] = 1): a ROM set
+      // without that program never makes it live, and then the older reading below still works.
       const h = window.__d2?.host;
+      const api = window.arcadeForceFeedback;
+      if (h?.ffb?.[7] === 1) boardSeen = true;
+      if (boardSeen && api?.version >= 1 && api.game === 'd2' && typeof api.read === 'function') {
+        const f = api.read();
+        return { constant: clamp(f.constant, -1, 1), spring: clamp(f.spring, 0, 1), damper: clamp(f.damper, 0, 1), friction: clamp(f.friction, 0, 1), rumble: clamp(f.rumble, 0, 1), speed: null, live: !!f.live };
+      }
+      // Older pages (or no drive board program): the control block's word 14, a reading of the
+      // game's commands, and the pad's rumble.
       if (!h?.ctlF) return idle;
       const force = h.module?._dayto_web_wheel_force ? h.module._dayto_web_wheel_force() : h.ctlF[14];
       const rumble = Math.max(h.ctlF[12] || 0, h.ctlF[13] || 0);
@@ -71,10 +86,23 @@ module.exports = function arcadeAdapter() {
     scud() {
       const h = window.__scud?.host || window.__d2?.host;
       if (!h?.ctl) return idle;
-      const valid = h.ctl[18];
-      const t = valid
-        ? { constant: clamp(h.ctl[17] / 15, -1, 1), spring: clamp(h.ctl[14] / 15, 0, 1), damper: 0, friction: clamp(h.ctl[15] / 15, 0, 1), rumble: clamp(h.ctl[16] / 15, 0, 1) }
-        : { constant: 0, spring: 0, damper: 0, friction: 0, rumble: 0 };
+      // Since Scud Race Plus web 0.11 (2026-11-21) the page gives the drive board's own forces,
+      // from the board's Z80 program: window.arcadeForceFeedback.read() (constant -1..1, + = right;
+      // spring, damper, friction, rumble 0..1; live false and all 0 in pause and menus).
+      // Older pages: the control block's words 14-18, a reading of the game's commands.
+      // As for Daytona USA 2: the API once the board's program has been seen running.
+      const api = window.arcadeForceFeedback;
+      if (h.ffb?.[7] === 1) boardSeen = true;
+      let t;
+      if (boardSeen && api?.version >= 1 && api.game === 'scud' && typeof api.read === 'function') {
+        const f = api.read();
+        t = { constant: clamp(f.constant, -1, 1), spring: clamp(f.spring, 0, 1), damper: clamp(f.damper, 0, 1), friction: clamp(f.friction, 0, 1), rumble: clamp(f.rumble, 0, 1), board: true, boardLive: !!f.live };
+      } else {
+        const valid = h.ctl[18];
+        t = valid
+          ? { constant: clamp(h.ctl[17] / 15, -1, 1), spring: clamp(h.ctl[14] / 15, 0, 1), damper: 0, friction: clamp(h.ctl[15] / 15, 0, 1), rumble: clamp(h.ctl[16] / 15, 0, 1) }
+          : { constant: 0, spring: 0, damper: 0, friction: 0, rumble: 0 };
+      }
       // Player car speed (Scud RAM): pointer at 0x1045A0, float at car+52, 1.5 ~ 320 km/h.
       let speed = null;
       try {
@@ -90,7 +118,8 @@ module.exports = function arcadeAdapter() {
           }
         }
       } catch {}
-      return { ...t, speed, live: !overlayOpen() };
+      const { board, boardLive, ...forces } = t;
+      return { ...forces, speed, live: board ? boardLive : !overlayOpen() };
     },
   };
   const read = readers[GAME] || (() => idle);

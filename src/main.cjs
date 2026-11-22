@@ -2,7 +2,7 @@
 const T0 = Date.now();
 const mark = label => { if (process.env.ARCADE_TIMING) process.stderr.write(`[t] ${String(Date.now() - T0).padStart(5)} ms (process ${Math.round(process.uptime() * 1000)} ms)  ${label}\n`); };
 mark('main start');
-const { app, BrowserWindow, ipcMain, shell, session, net } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, session, net, nativeImage } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { execFile, execFileSync } = require('node:child_process');
@@ -11,6 +11,23 @@ const { installIsolation, isolationHeaders, PARTITION } = require('./remote.cjs'
 const { OfflineStore, NETWORK_ERRORS } = require('./offline.cjs');
 const { SdlBridge } = require('./sdl-bridge.cjs');
 const { setupPortable } = require('./portable.cjs');
+const { IconStore } = require('./icons.cjs');
+const { Updater, runApplier, APPLY_FLAG } = require('./updater.cjs');
+
+// Update "apply" mode: this is the NEW version, started by the old one from data/updates/<version>/.
+// It only swaps the program files and starts the installed copy: no window, no settings, no GPU.
+const applyAt = process.argv.indexOf(APPLY_FLAG);
+if (applyAt > 0) {
+  const jobFile = process.argv[applyAt + 1];
+  app.setPath('userData', path.join(path.dirname(jobFile), 'applier-profile'));   // throwaway, removed later
+  app.disableHardwareAcceleration();
+  app.on('window-all-closed', () => {});
+  app.whenReady().then(() => { app.dock?.hide(); return runApplier(app, jobFile); }).catch(e => {
+    try { fs.appendFileSync(path.join(path.dirname(jobFile), 'update.log'), `${new Date().toISOString()} apply failed: ${e.stack || e}\n`); } catch {}
+    app.exit(1);
+  });
+  return;   // nothing else of the launcher runs in this mode
+}
 
 // Portable: all data in <exe folder>\data (falls back to %APPDATA% if that folder is read-only).
 const portable = setupPortable(app);
@@ -19,8 +36,10 @@ mark(`data dir ${portable.dir}${portable.migrated ? ' (migrated)' : ''}`);
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
+const SETTINGS_VERSION = 2;
 const DEFAULTS = {
-  gpu: { forceDedicated: true, angle: process.platform === 'win32' ? 'd3d11' : 'default' },
+  v: SETTINGS_VERSION,
+  gpu: { forceDedicated: true },
   ffb: {
     enabled: true,
     strength: 0.8,       // master 0..1.5
@@ -35,14 +54,17 @@ const DEFAULTS = {
     deviceGain: 100,
     device: 0,           // 0 = auto (first wheel with constant force)
   },
-  input: { sdlVirtualPad: true },
+  // Off by default: the browser already sees the wheel, the copy would show it twice.
+  input: { sdlVirtualPad: false },
   window: { fullscreen: false },
+  update: { auto: true },   // download new launcher versions from GitHub Releases
   ui: { lang: 'en' },
   games: {
     d1: { invert: false },
     d2: { invert: false },
     scud: { invert: false },
   },
+  stats: {},   // per game: { playMs, lastPlayed }
 };
 const SETTINGS_FILE = () => path.join(app.getPath('userData'), 'settings.json');
 function merge(base, over) {
@@ -51,10 +73,18 @@ function merge(base, over) {
   for (const k of Object.keys(over)) out[k] = (base && typeof base[k] === 'object' && !Array.isArray(base[k])) ? merge(base[k], over[k]) : over[k];
   return out;
 }
-let settings = DEFAULTS;
-function loadSettings() {
-  try { settings = merge(DEFAULTS, JSON.parse(fs.readFileSync(SETTINGS_FILE(), 'utf8'))); } catch { settings = merge(DEFAULTS, {}); }
+function readSettings(file) {
+  let raw = {};
+  try { raw = JSON.parse(fs.readFileSync(file, 'utf8')) || {}; } catch {}
+  const s = merge(DEFAULTS, raw);
+  // v2: the SDL3 virtual controller became opt-in (v1 had it on for everyone).
+  if ((raw.v || 1) < 2) s.input = { ...s.input, sdlVirtualPad: false };
+  delete s.gpu.angle;   // the ANGLE backend choice was removed: Chromium's default for each system
+  s.v = SETTINGS_VERSION;
+  return s;
 }
+let settings = DEFAULTS;
+function loadSettings() { settings = readSettings(SETTINGS_FILE()); }
 function saveSettings() {
   try { fs.mkdirSync(path.dirname(SETTINGS_FILE()), { recursive: true }); fs.writeFileSync(SETTINGS_FILE(), JSON.stringify(settings, null, 2)); } catch (e) { console.warn(e); }
 }
@@ -64,7 +94,7 @@ function saveSettings() {
 // ---------------------------------------------------------------------------
 // Settings are read synchronously here because command-line switches only work before "ready".
 const userDataEarly = app.getPath('userData');
-try { settings = merge(DEFAULTS, JSON.parse(fs.readFileSync(path.join(userDataEarly, 'settings.json'), 'utf8'))); } catch {}
+settings = readSettings(path.join(userDataEarly, 'settings.json'));
 
 let gpuPreference = { state: 'off' };   // shown translated by the launcher
 if (settings.gpu.forceDedicated) {
@@ -109,9 +139,6 @@ function ensureGpuPreference(sync) {
 function saveSettingsEarly() {
   try { fs.mkdirSync(userDataEarly, { recursive: true }); fs.writeFileSync(path.join(userDataEarly, 'settings.json'), JSON.stringify(settings, null, 2)); } catch {}
 }
-// ANGLE backends that exist on each system (D3D only on Windows, Metal only on macOS).
-const ANGLE_BACKENDS = { win32: ['d3d11', 'd3d11on12', 'vulkan', 'gl'], darwin: ['metal', 'gl'], linux: ['vulkan', 'gl'] }[process.platform] || [];
-if (ANGLE_BACKENDS.includes(settings.gpu.angle)) app.commandLine.appendSwitch('use-angle', settings.gpu.angle);
 // Games keep running at full speed while another window has focus (FFB is muted then).
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
@@ -124,6 +151,8 @@ let gameWin = null;
 let activeGame = null;
 let gameSession = null;
 let offline = null;        // OfflineStore (data/offline)
+let icons = null;          // IconStore (data/icons)
+let updater = null;        // Updater (data/updates)
 let offlineMode = false;   // the running game is served from its offline copy
 const bridge = new SdlBridge();
 let lastGameFfbAt = 0;
@@ -134,6 +163,7 @@ function gameList() {
   return GAMES.map(g => ({
     id: g.id, title: g.title, subtitle: g.subtitle, accent: g.accent,
     url: g.url, repo: g.repo, running: activeGame === g.id,
+    icon: icons ? icons.get(g.id) : null, stats: settings.stats?.[g.id] || null,
     offline: offline ? offline.status(g.id) : null, offlineMode: activeGame === g.id && offlineMode,
   }));
 }
@@ -161,7 +191,17 @@ function sendGame(ch, data) { if (gameWin && !gameWin.isDestroyed()) gameWin.web
 // ---------------------------------------------------------------------------
 // SDL3 bridge wiring
 // ---------------------------------------------------------------------------
-let lastUiInput = 0;
+// The launcher gets the wheel/pad state at most ~30 times a second, but always the latest one:
+// the bridge only reports changes, so a dropped last state (the stick back at the centre)
+// would leave the preview stuck where it was.
+let lastUiInput = 0, pendingUiInput = null, uiInputTimer = null;
+function sendUiInput() {
+  uiInputTimer = null;
+  if (!pendingUiInput) return;
+  lastUiInput = Date.now();
+  sendLauncher('bridge:input', pendingUiInput);
+  pendingUiInput = null;
+}
 bridge.on('status', st => sendLauncher('bridge:status', st));
 bridge.on('opened', () => { bridge.setGain(settings.ffb.deviceGain); });
 bridge.on('log', line => sendLauncher('bridge:log', line));
@@ -169,8 +209,10 @@ bridge.on('input', inp => {
   const dev = bridge.devices.find(d => d.id === inp.id);
   if (dev) { inp.name = dev.name; inp.vendor = dev.vendor; inp.product = dev.product; }
   if (settings.input.sdlVirtualPad) sendGame('sdl:input', inp);
-  const now = Date.now();
-  if (now - lastUiInput > 33) { lastUiInput = now; sendLauncher('bridge:input', inp); }
+  pendingUiInput = inp;
+  const wait = 33 - (Date.now() - lastUiInput);
+  if (wait <= 0) sendUiInput();
+  else if (!uiInputTimer) uiInputTimer = setTimeout(sendUiInput, wait);
 });
 
 // Watchdog: never leave a force running if the game stops sending.
@@ -187,11 +229,12 @@ setInterval(() => {
 function createLauncher() {
   launcherWin = new BrowserWindow({
     width: 1280, height: 820, minWidth: 980, minHeight: 640,
-    backgroundColor: '#0b0d12', title: 'Arcade Launcher', autoHideMenuBar: true,
+    backgroundColor: '#0a0c11', title: 'Arcade Launcher', autoHideMenuBar: true, icon: APP_ICON,
     webPreferences: { preload: path.join(__dirname, 'launcher', 'preload.cjs'), contextIsolation: true, sandbox: true },
   });
   mark('window created');
-  launcherWin.webContents.once('did-finish-load', () => mark('page loaded'));
+  // Tells a waiting update script that this version starts (ARCADE_UPDATE_TEST_NOSTART: test the rollback).
+  launcherWin.webContents.once('did-finish-load', () => { mark('page loaded'); if (!process.env.ARCADE_UPDATE_TEST_NOSTART) updater?.confirmStarted(); });
   launcherWin.once('ready-to-show', () => mark('ready-to-show'));
   launcherWin.loadFile(path.join(__dirname, 'launcher', 'index.html'));
   launcherWin.on('closed', () => { launcherWin = null; if (gameWin && !gameWin.isDestroyed()) gameWin.close(); });
@@ -205,6 +248,17 @@ function setOfflineMode(on) {
   if (on === offlineMode) return;
   offlineMode = on;
   if (on) offline.enableServing(gameForUrl); else offline.disableServing();
+}
+
+// The launcher's own icon (build/icon.svg, rendered by `npm run icons`): its window, and a game's
+// until that game publishes a favicon. Packaged builds also carry it in the .exe / .app.
+const APP_ICON = path.join(__dirname, 'assets', 'icon.png');
+
+function gameIconImage(id) {
+  const url = icons?.get(id);
+  if (!url) return null;
+  const img = nativeImage.createFromDataURL(url);
+  return img.isEmpty() ? null : img;
 }
 
 async function playGame(id) {
@@ -221,8 +275,12 @@ async function playGame(id) {
   if (!isOnline() && !offline.has(id)) sendLauncher('launcher:error', { key: 'offline.unavailable', vars: { title: game.title } });
 
   activeGame = id;
+  const startedAt = Date.now();
+  // The game's own favicon on its window (title bar, taskbar, Alt+Tab); none yet: the launcher's.
+  const gameIcon = gameIconImage(id);
   gameWin = new BrowserWindow({
     width: 1280, height: 960, backgroundColor: '#000000', title: game.title, autoHideMenuBar: true,
+    icon: gameIcon || APP_ICON,
     fullscreen: !!settings.window.fullscreen,
     webPreferences: {
       preload: path.join(__dirname, 'game', 'preload.cjs'),
@@ -240,7 +298,7 @@ async function playGame(id) {
   // Pages of the same game (e.g. spectator.html) stay in the launcher; other links open in the browser.
   gameWin.webContents.setWindowOpenHandler(({ url }) => {
     if (gameForUrl(url)?.id !== id) { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; }
-    return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true, webPreferences: { partition: PARTITION, preload: path.join(__dirname, 'game', 'preload.cjs'), contextIsolation: true, sandbox: false, nodeIntegration: false } } };
+    return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true, icon: gameIcon || APP_ICON, webPreferences: { partition: PARTITION, preload: path.join(__dirname, 'game', 'preload.cjs'), contextIsolation: true, sandbox: false, nodeIntegration: false } } };
   });
   gameWin.webContents.on('will-navigate', (e, url) => {
     if (gameForUrl(url)?.id !== id) { e.preventDefault(); if (/^https?:/.test(url)) shell.openExternal(url); }
@@ -271,6 +329,9 @@ async function playGame(id) {
   });
   gameWin.on('blur', () => bridge.zero());
   gameWin.on('closed', () => {
+    const st = settings.stats[id] || {};
+    settings.stats = { ...settings.stats, [id]: { playMs: (st.playMs || 0) + (Date.now() - startedAt), lastPlayed: new Date().toISOString() } };
+    saveSettings();
     gameWin = null; activeGame = null; lastTelemetry = null;
     bridge.zero();
     setOfflineMode(false);
@@ -287,8 +348,9 @@ ipcMain.handle('launcher:state', async () => { mark('state requested'); const r 
 const launcherState = async () => ({
   games: gameList(), settings, bridge: bridge.status(), gpu: gpuInfoCache, version: app.getVersion(),
   electron: process.versions.electron, chrome: process.versions.chrome,
-  platform: process.platform, angleBackends: ANGLE_BACKENDS,
+  platform: process.platform,
   data: { dir: portable.dir, portable: portable.portable, reason: portable.reason || null, migratedFrom: portable.migratedFrom },
+  update: updater ? { ...updater.state, failedNotice: updater.failedNotice } : null,
 });
 ipcMain.handle('launcher:play', async (_e, id) => { await playGame(id); return true; });
 ipcMain.handle('launcher:setSettings', (_e, patch) => {
@@ -312,6 +374,15 @@ ipcMain.handle('launcher:clearCache', async () => {
 });
 ipcMain.handle('launcher:refreshDevices', () => { bridge.send('list'); bridge.openDevice(settings.ffb.device); return true; });
 ipcMain.handle('launcher:restart', () => { app.relaunch(); app.exit(0); });
+ipcMain.handle('launcher:updateCheck', () => updater.check({ download: settings.update.auto !== false }));
+ipcMain.handle('launcher:updateDownload', () => updater.check({ download: true }));
+// Closes the game and the launcher; the update script puts the new version in place and starts it.
+ipcMain.handle('launcher:updateApply', () => {
+  updater.apply();
+  if (gameWin && !gameWin.isDestroyed()) gameWin.destroy();
+  setTimeout(() => app.quit(), 50);
+  return true;
+});
 ipcMain.handle('launcher:test', (_e, kind) => {
   const s = Math.max(0.2, settings.ffb.strength);
   const tests = {
@@ -351,12 +422,33 @@ app.whenReady().then(() => {
   installIsolation(gameSession);
   offline = new OfflineStore(path.join(app.getPath('userData'), 'offline'), { session: gameSession, net, isolationHeaders, strict: simulateOffline });
   offline.on('status', () => sendLauncher('games', gameList()));
+  icons = new IconStore(path.join(app.getPath('userData'), 'icons'), { net });
+  updater = new Updater({ app, net, dir: path.join(app.getPath('userData'), 'updates'), feed: process.env.ARCADE_UPDATE_FEED });
+  updater.on('state', st => {
+    sendLauncher('update', st);
+    // Tests (with ARCADE_UPDATE_FEED pointing at a local release): this version installs the update
+    // as soon as it is ready (ARCADE_UPDATE_AUTOAPPLY=<this version>).
+    if (process.env.ARCADE_UPDATE_AUTOAPPLY === app.getVersion() && st.status === 'ready') { updater.apply(); setTimeout(() => app.quit(), 50); }
+  });
+  // Checked a few seconds after start and every 6 hours (not during the automated self-test).
+  if (!process.env.ARCADE_SELFTEST) {
+    const checkNow = () => updater.check({ download: settings.update.auto !== false }).catch(() => {});
+    setTimeout(checkNow, 4000);
+    setInterval(checkNow, 6 * 3600e3).unref();
+  }
   const allowed = ['fullscreen', 'pointerLock', 'clipboard-sanitized-write', 'notifications', 'media'];
   for (const s of [session.defaultSession, gameSession]) s.setPermissionRequestHandler((_wc, permission, cb) => cb(allowed.includes(permission)));
   bridge.wantDevice = settings.ffb.device || 0;
   bridge.start();
   createLauncher();
   void gpuInfo();
+  // The games' icons, after the launcher is up (kept for offline use; unchanged ones are not rewritten).
+  setTimeout(async () => {
+    if (!isOnline()) return;
+    let changed = false;
+    for (const g of GAMES) { try { changed = (await icons.refresh(g)) || changed; } catch {} }
+    if (changed) sendLauncher('games', gameList());
+  }, 1500);
   if (settings.gpu.forceDedicated && process.platform === 'win32' && gpuPreference.state === 'already') ensureGpuPreference(false);
   if (process.env.ARCADE_SELFTEST) selfTest(process.env.ARCADE_SELFTEST).catch(e => {
     // Leave the reason on disk so CI can show it even when the test cannot finish.
@@ -384,6 +476,21 @@ async function selfTest(outDir) {
     await wait(500);
     report.i18n[lang] = await launcherWin.webContents.executeJavaScript(`({ htmlLang: document.documentElement.lang, play: document.querySelector('.play').textContent, missing: ${missingKeys} })`);
     await shot(launcherWin.webContents, `launcher-${lang}.png`);
+    // The other two screens: Settings and the controller sheet.
+    const key = k => launcherWin.webContents.executeJavaScript(`document.dispatchEvent(new KeyboardEvent('keydown', { key: '${k}' }))`);
+    for (const [k, name, back] of [['ArrowRight', 'next', 'ArrowLeft'], ['s', 'settings'], ['c', 'controller']]) {
+      await key(k); await wait(900);
+      await shot(launcherWin.webContents, `launcher-${name}-${lang}.png`);
+      await key(back || 'Escape'); await wait(200);
+    }
+  }
+  // A large window (maximised on a 1080p screen), with the last game selected: the library scales with it.
+  {
+    const [w0, h0] = launcherWin.getSize();
+    const key = k => launcherWin.webContents.executeJavaScript(`document.dispatchEvent(new KeyboardEvent('keydown', { key: '${k}' }))`);
+    launcherWin.setSize(1920, 1050); await key('ArrowLeft'); await wait(600);
+    await shot(launcherWin.webContents, 'launcher-large.png');
+    await key('ArrowRight'); launcherWin.setSize(w0, h0); await wait(200);
   }
   report.i18n.saved = settings.ui.lang;
   if (process.env.ARCADE_SELFTEST_UI) { fs.writeFileSync(path.join(outDir, 'report.json'), JSON.stringify(report, null, 2)); app.exit(0); return; }

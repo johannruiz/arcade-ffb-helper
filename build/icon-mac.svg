@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- macOS: the same icon on Apple's grid (824 px tile on a 1024 canvas, soft shadow; the filter works in the tile's 100-unit space),
+       so it sits at the same size as other apps in the Dock. -->
+  <defs>
+    <filter id="s" x="-20%" y="-20%" width="140%" height="145%">
+      <feDropShadow dx="0" dy="1.2" stdDeviation="1.4" flood-color="#000" flood-opacity=".3"/>
+    </filter>
+  </defs>
+  <g transform="translate(100 100) scale(8.24)">
+    <rect width="100" height="100" rx="22" fill="#0d1220" filter="url(#s)"/>
+    <polygon points="12.5,78 27.5,78 51.5,22 36.5,22" fill="#e8352b"/>
+    <polygon points="30.5,78 45.5,78 69.5,22 54.5,22" fill="#1e7bff"/>
+    <polygon points="48.5,78 63.5,78 87.5,22 72.5,22" fill="#ffb000"/>
+  </g>
+</svg>
