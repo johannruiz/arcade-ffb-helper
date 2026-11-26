@@ -36,5 +36,11 @@ bool ffb_has_wheel(const FfbDevice *d);
 void ffb_set_gain(FfbDevice *d, int gain_0_100);
 /* constant -1..1 (+ = right), spring/damper/friction/rumble 0..1 */
 void ffb_apply(FfbDevice *d, float constant, float spring, float damper, float friction, float rumble);
+/* The same with a shaped spring (protocol 0.2): `spring` is its saturation (the strongest force),
+ * `spring_coeff` 0..1 its slope (1 = full force at full lock, the steepest a condition effect takes)
+ * and `spring_dead` 0..1 its dead zone around the centre, a fraction of one side's travel.
+ * spring_coeff < 0 is ffb_apply's linear spring: slope = spring, no saturation, no dead zone. */
+void ffb_apply_shaped(FfbDevice *d, float constant, float spring, float spring_coeff, float spring_dead,
+                      float damper, float friction, float rumble);
 void ffb_features_json(Uint32 f, char *buf, size_t cap);
 void json_escape(const char *s, char *dst, size_t cap);

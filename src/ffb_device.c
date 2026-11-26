@@ -206,15 +206,29 @@ void ffb_set_gain(FfbDevice *d, int g) {
     if (d->haptic && (d->features & SDL_HAPTIC_GAIN)) SDL_SetHapticGain(d->haptic, g < 0 ? 0 : g > 100 ? 100 : g);
 }
 
-static void set_condition(FfbDevice *d, int id, SDL_HapticEffect *e, float strength) {
+/* A condition effect: slope `coeff`, saturation `sat` and dead zone `dead`, each 0..1. A linear
+ * effect (coeff = strength, sat 1, dead 0) is what every game sent before protocol 0.2. */
+static void set_condition_shaped(FfbDevice *d, int id, SDL_HapticEffect *e, float coeff, float sat, float dead) {
     if (id < 0) return;
-    Sint16 coeff = (Sint16)(clampf(strength, 0, 1) * 32767.0f);
-    if (e->condition.right_coeff[0] == coeff) return;
-    e->condition.right_coeff[0] = e->condition.left_coeff[0] = coeff;
+    Uint16 s = (Uint16)(clampf(sat, 0, 1) * 65535.0f);
+    Sint16 k = s ? (Sint16)(clampf(coeff, 0, 1) * 32767.0f) : 0;
+    Uint16 db = (Uint16)(clampf(dead, 0, 1) * 65535.0f);
+    if (e->condition.right_coeff[0] == k && e->condition.right_sat[0] == s && e->condition.deadband[0] == db) return;
+    e->condition.right_coeff[0] = e->condition.left_coeff[0] = k;
+    e->condition.right_sat[0] = e->condition.left_sat[0] = s;
+    e->condition.deadband[0] = db;
     update_effect(d, id, e);
+}
+static void set_condition(FfbDevice *d, int id, SDL_HapticEffect *e, float strength) {
+    set_condition_shaped(d, id, e, strength, 1, 0);
 }
 
 void ffb_apply(FfbDevice *d, float constant, float spring, float damper, float friction, float rumble) {
+    ffb_apply_shaped(d, constant, spring, -1, 0, damper, friction, rumble);
+}
+
+void ffb_apply_shaped(FfbDevice *d, float constant, float spring, float spring_coeff, float spring_dead,
+                      float damper, float friction, float rumble) {
     if (!ffb_has_wheel(d)) return; /* a plain gamepad keeps the game's own vibration */
     if (d->eff_const >= 0) {
         Sint16 lvl = (Sint16)(clampf(constant, -1, 1) * 32767.0f);
@@ -223,7 +237,8 @@ void ffb_apply(FfbDevice *d, float constant, float spring, float damper, float f
             update_effect(d, d->eff_const, &d->e_const);
         }
     }
-    set_condition(d, d->eff_spring, &d->e_spring, spring);
+    if (spring_coeff < 0) set_condition(d, d->eff_spring, &d->e_spring, spring);
+    else set_condition_shaped(d, d->eff_spring, &d->e_spring, spring_coeff, spring, spring_dead);
     set_condition(d, d->eff_damper, &d->e_damper, damper);
     set_condition(d, d->eff_friction, &d->e_friction, friction);
     if (d->eff_sine >= 0) {

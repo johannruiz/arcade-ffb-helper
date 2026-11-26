@@ -38,8 +38,11 @@
     if (!ws || ws.readyState !== 1) return;
     let f = null;
     try { f = window.arcadeForceFeedback?.read?.(); } catch {}
+    // springDeadZone/springSlope (optional, helper 0.2): a spring shaped like the arcade board's.
+    const shape = f && f.live && Number.isFinite(f.springDeadZone) && Number.isFinite(f.springSlope)
+      ? ` ${num(f.springDeadZone)} ${num(f.springSlope)}` : '';
     const line = f && f.live
-      ? `f 1 ${num(f.constant)} ${num(f.spring)} ${num(f.damper)} ${num(f.friction)} ${num(f.rumble)}`
+      ? `f 1 ${num(f.constant)} ${num(f.spring)} ${num(f.damper)} ${num(f.friction)} ${num(f.rumble)}${shape}`
       : 'f 0 0 0 0 0 0';
     const now = performance.now();
     if (line === last && now - lastSent < 200) return; // keep-alive every 200 ms (the helper stops at 300)

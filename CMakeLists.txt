@@ -14,7 +14,7 @@ endif()
 # Windows: the C runtime inside the exe too (no Visual C++ Redistributable needed).
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-project(arcade_ffb_helper VERSION 0.1.1 LANGUAGES C)
+project(arcade_ffb_helper VERSION 0.2.0 LANGUAGES C)
 
 set(SDL3_VERSION 3.4.20)
 set(OUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/out")
@@ -27,7 +27,7 @@ add_custom_command(OUTPUT "${UI_HEADER}"
   DEPENDS "${UI_HTML}" "${CMAKE_CURRENT_SOURCE_DIR}/embed.cmake"
   COMMENT "Embedding the settings page")
 
-set(SOURCES src/main.c src/ffb_device.c src/server.c "${UI_HEADER}")
+set(SOURCES src/main.c src/ffb_device.c src/server.c src/updater.c "${UI_HEADER}")
 
 if(APPLE)
   # App icon: assets/icon-mac.png -> AppIcon.icns (sips + iconutil, both part of macOS).
@@ -61,7 +61,8 @@ if(APPLE)
 elseif(WIN32)
   add_executable(arcade_ffb_helper WIN32 ${SOURCES} assets/app.rc)
   set_target_properties(arcade_ffb_helper PROPERTIES OUTPUT_NAME "ArcadeFFBHelper")
-  target_link_libraries(arcade_ffb_helper PRIVATE ws2_32)
+  # winhttp: the update check and download (updater.c), part of Windows.
+  target_link_libraries(arcade_ffb_helper PRIVATE ws2_32 winhttp)
   set_source_files_properties(assets/app.rc PROPERTIES COMPILE_DEFINITIONS
     "HELPER_VERSION_MAJOR=${PROJECT_VERSION_MAJOR};HELPER_VERSION_MINOR=${PROJECT_VERSION_MINOR};HELPER_VERSION_PATCH=${PROJECT_VERSION_PATCH};HELPER_VERSION_STRING=\"${PROJECT_VERSION}\"")
 else()

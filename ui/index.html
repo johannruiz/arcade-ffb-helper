@@ -116,6 +116,7 @@ input[type=text] { width: 100%; background: var(--surface-2); border: 1px solid 
     <h2 data-t="forces.title"></h2>
     <div class="legend"><span></span><span data-t="forces.game"></span><span data-t="forces.wheel"></span><span></span></div>
     <div class="meters" id="meters"></div>
+    <div class="note" id="springShape" hidden></div>
   </section>
 
   <section class="card" id="settingsCard">
@@ -144,6 +145,7 @@ input[type=text] { width: 100%; background: var(--surface-2); border: 1px solid 
     <details>
       <summary data-t="s.advanced"></summary>
       <label class="switch"><span><span data-t="s.openOnStart"></span><span class="help" data-t="s.openOnStart.help"></span></span><input type="checkbox" data-key="openOnStart"></label>
+      <label class="switch"><span><span data-t="s.autoUpdate"></span><span class="help" data-t="s.autoUpdate.help"></span><span class="help" id="updateState"></span></span><input type="checkbox" data-key="autoUpdate"></label>
       <div style="padding:6px 0"><span data-t="s.origins"></span><span class="help" data-t="s.origins.help" style="margin-bottom:6px"></span><input type="text" id="origins" spellcheck="false" placeholder="https://example.org"></div>
       <div class="row" style="padding-top:6px"><button id="reset" data-t="s.reset"></button></div>
     </details>
@@ -176,6 +178,7 @@ const T = {
     'wheel.title': 'Wheel', 'wheel.missing': 'No device found', 'wheel.auto': 'Automatic (first wheel with force feedback)',
     'wheel.ffb': 'Force feedback ready', 'wheel.none': 'This device has no wheel force feedback. A gamepad keeps the game\'s own vibration; nothing to set here.',
     'forces.title': 'Forces', 'forces.game': 'From the game', 'forces.wheel': 'To the wheel',
+    'spring.shape': 'Spring with the arcade board\'s curve: no force in the centre {dead}%, then up to its strength at {lock}% of the lock.',
     'f.constant': 'Torque', 'f.spring': 'Spring', 'f.damper': 'Damper', 'f.friction': 'Friction', 'f.rumble': 'Vibration',
     'settings.title': 'Settings',
     's.enabled': 'Force feedback', 's.enabled.help': 'Off: the wheel gets no force from the games.',
@@ -185,6 +188,10 @@ const T = {
     's.fine': 'Fine tuning', 's.constantGain': 'Torque', 's.springGain': 'Game spring', 's.damperGain': 'Damper', 's.frictionGain': 'Friction', 's.rumbleGain': 'Vibration',
     's.perGame': 'Per game', 's.invert.d1': 'Daytona USA: invert force direction', 's.invert.d2': 'Daytona USA 2: invert force direction', 's.invert.scud': 'Scud Race: invert force direction',
     's.advanced': 'Advanced', 's.openOnStart': 'Open this page when the helper starts', 's.openOnStart.help': 'The tray icon opens it any time.',
+    's.autoUpdate': 'Update automatically', 's.autoUpdate.help': 'Checks GitHub when the helper starts and once a day. A new version is downloaded, checked and installed between races; the helper then restarts by itself. Nothing about you is sent.',
+    'upd.off': 'Updates are off.', 'upd.waiting': 'Checking for updates shortly.', 'upd.checking': 'Checking for updates…', 'upd.latest': 'Up to date.',
+    'upd.downloading': 'Downloading {v}…', 'upd.ready': '{v} is ready: it installs when no race is running.', 'upd.failed': 'Update problem: {m}',
+    'ver.new': 'update {v} ready',
     's.origins': 'Other game addresses', 's.origins.help': 'Origins allowed besides johannruiz.github.io and localhost, separated by commas.',
     's.reset': 'Restore defaults',
     'test.title': 'Test', 'test.left': '◀ Push', 'test.right': 'Push ▶', 'test.spring': 'Spring', 'test.damper': 'Damper', 'test.rumble': 'Vibration', 'test.stop': 'Stop',
@@ -210,6 +217,7 @@ const T = {
     'wheel.title': 'Volante', 'wheel.missing': 'Ningún dispositivo', 'wheel.auto': 'Automático (el primer volante con force feedback)',
     'wheel.ffb': 'Force feedback listo', 'wheel.none': 'Este dispositivo no tiene force feedback de volante. Un mando conserva la vibración propia del juego; aquí no hay nada que ajustar.',
     'forces.title': 'Fuerzas', 'forces.game': 'Del juego', 'forces.wheel': 'Al volante',
+    'spring.shape': 'Muelle con la curva de la recreativa: sin fuerza en el centro {dead} %, después sube hasta su fuerza al {lock} % del giro.',
     'f.constant': 'Par', 'f.spring': 'Muelle', 'f.damper': 'Amortiguación', 'f.friction': 'Fricción', 'f.rumble': 'Vibración',
     'settings.title': 'Ajustes',
     's.enabled': 'Force feedback', 's.enabled.help': 'Desactivado: el volante no recibe fuerzas de los juegos.',
@@ -219,6 +227,10 @@ const T = {
     's.fine': 'Ajuste fino', 's.constantGain': 'Par', 's.springGain': 'Muelle del juego', 's.damperGain': 'Amortiguación', 's.frictionGain': 'Fricción', 's.rumbleGain': 'Vibración',
     's.perGame': 'Por juego', 's.invert.d1': 'Daytona USA: invertir el sentido de la fuerza', 's.invert.d2': 'Daytona USA 2: invertir el sentido de la fuerza', 's.invert.scud': 'Scud Race: invertir el sentido de la fuerza',
     's.advanced': 'Avanzado', 's.openOnStart': 'Abrir esta página al iniciar el helper', 's.openOnStart.help': 'El icono de la bandeja la abre en cualquier momento.',
+    's.autoUpdate': 'Actualizar automáticamente', 's.autoUpdate.help': 'Consulta GitHub al iniciar el helper y una vez al día. Una versión nueva se descarga, se comprueba y se instala entre carreras; el helper se reinicia solo. No se envía nada sobre ti.',
+    'upd.off': 'Las actualizaciones están desactivadas.', 'upd.waiting': 'Buscará actualizaciones en unos segundos.', 'upd.checking': 'Buscando actualizaciones…', 'upd.latest': 'Al día.',
+    'upd.downloading': 'Descargando {v}…', 'upd.ready': '{v} está lista: se instala cuando no haya una carrera en marcha.', 'upd.failed': 'Problema al actualizar: {m}',
+    'ver.new': 'actualización {v} lista',
     's.origins': 'Otras direcciones de juegos', 's.origins.help': 'Orígenes permitidos además de johannruiz.github.io y localhost, separados por comas.',
     's.reset': 'Restaurar valores',
     'test.title': 'Probar', 'test.left': '◀ Empujar', 'test.right': 'Empujar ▶', 'test.spring': 'Muelle', 'test.damper': 'Amortiguación', 'test.rumble': 'Vibración', 'test.stop': 'Parar',
@@ -298,7 +310,9 @@ function setConn(ok) {
 let lastDevices = '';
 function render() {
   const s = state;
-  $('ver').textContent = `v${s.version} · SDL ${s.sdl}`;
+  const u = s.update || { state: 'off' };
+  $('ver').textContent = `v${s.version} · SDL ${s.sdl}` + (u.state === 'ready' ? ' · ' + t('ver.new', { v: u.latest }) : '');
+  $('updateState').textContent = t('upd.' + u.state, { v: u.latest, m: u.message });
   // game
   const games = s.games;
   const g = games.find(x => x.active) || games[0];
@@ -341,6 +355,11 @@ function render() {
     setBar(document.querySelector(`[data-out="${f}"]`), s.out[i], i === 0);
     document.querySelector(`[data-val="${f}"]`).textContent = Math.round(s.out[i] * 100);
   });
+  // a shaped spring (protocol 0.2): where it starts and where it reaches its strength
+  const sp = s.outSpring;
+  $('springShape').hidden = !sp;
+  if (sp) $('springShape').textContent = t('spring.shape', { dead: Math.round(sp.dead * 100),
+    lock: Math.min(100, Math.round((sp.dead + (sp.slope > 0 ? s.out[1] / sp.slope : 1)) * 100)) });
   // settings
   for (const el of document.querySelectorAll('[data-key]')) {
     const k = el.dataset.key, v = s.settings[k];

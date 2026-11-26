@@ -8,8 +8,12 @@
  *
  * Game page -> helper (text frames):
  *   hello <game> <api_version>                         game: d1 | d2 | scud
- *   f <live 0|1> <constant> <spring> <damper> <friction> <rumble>
+ *   f <live 0|1> <constant> <spring> <damper> <friction> <rumble> [<spring dead zone> <spring slope>]
  *        constant -1..1 (+ = right), the others 0..1; at most every 8 ms, at least every 250 ms
+ *        Optional (0.2, Daytona USA): a shaped spring like the arcade board's. <spring> is then its
+ *        strongest force (saturation), <spring dead zone> 0..0.5 the travel around the centre with no
+ *        force (a fraction of one side) and <spring slope> 0..100 the force per full lock past it.
+ *        Without them the spring is linear, as before: slope <spring>, no saturation or dead zone.
  * Helper -> game page:
  *   hi <helper_version> <wheel 0|1> <device name>      after hello and when the wheel changes
  *
@@ -28,6 +32,7 @@
 #include "ffb_device.h"
 #include "server.h"
 #include "ui_page.h"
+#include "updater.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -51,6 +56,7 @@ typedef struct {
     int deviceGain;
     bool invert_d1, invert_d2, invert_scud;
     bool openOnStart;
+    bool autoUpdate;    /* install new versions from GitHub (updater.c) */
     char device[128];   /* empty = automatic */
     char origins[512];  /* extra allowed game origins, comma separated */
 } Settings;
@@ -61,7 +67,7 @@ static const Settings DEFAULTS = {
     0.08f, 0.05f, 0.25f,
     100,
     false, false, false,
-    true, "", "",
+    true, true, "", "",
 };
 
 typedef enum { T_BOOL, T_FLOAT, T_INT } FieldType;
@@ -81,6 +87,7 @@ static const struct { const char *key; FieldType t; size_t off; float lo, hi; } 
     {"invert_d2", T_BOOL, offsetof(Settings, invert_d2), 0, 1},
     {"invert_scud", T_BOOL, offsetof(Settings, invert_scud), 0, 1},
     {"openOnStart", T_BOOL, offsetof(Settings, openOnStart), 0, 1},
+    {"autoUpdate", T_BOOL, offsetof(Settings, autoUpdate), 0, 1},
 };
 #define NFIELDS (int)(sizeof FIELDS / sizeof FIELDS[0])
 
@@ -207,11 +214,14 @@ typedef struct {
     Uint64 last_ms;
     bool live;
     float f[5]; /* constant spring damper friction rumble */
+    bool shaped;          /* the game sent a spring shape (protocol 0.2) */
+    float dead, slope;    /* its dead zone 0..0.5 and slope 0..100 */
 } Peer;
 
 static Peer peers[MAX_CLIENTS];
 static FfbDevice dev;
 static float smoothed, out[5];
+static float out_coeff = -1, out_dead; /* the spring's shape to the wheel; out_coeff < 0: linear */
 static float test_v[5];
 static Uint64 test_until;
 static int owner = -1;           /* game peer whose forces are played */
@@ -319,11 +329,15 @@ static void on_text(int cid, char *msg, size_t len) {
     if (p->kind == CLIENT_GAME) {
         if (msg[0] == 'f' && msg[1] == ' ') {
             int live = 0;
-            float v[5] = {0};
-            if (sscanf(msg + 2, "%d %f %f %f %f %f", &live, &v[0], &v[1], &v[2], &v[3], &v[4]) == 6) {
+            float v[7] = {0};
+            int n = sscanf(msg + 2, "%d %f %f %f %f %f %f %f", &live, &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6]);
+            if (n >= 6) {
                 p->live = live != 0;
                 p->f[0] = clampf(v[0], -1, 1);
                 for (int i = 1; i < 5; i++) p->f[i] = clampf(v[i], 0, 1);
+                p->shaped = n == 8;
+                p->dead = p->shaped ? clampf(v[5], 0, 0.5f) : 0;
+                p->slope = p->shaped ? clampf(v[6], 0, 100) : 0;
                 if (p->live) owner = cid;
             }
         } else if (!strncmp(msg, "hello ", 6)) {
@@ -377,6 +391,9 @@ static int right_sign(void) {
 static void play(const float v[5]) {
     ffb_apply(&dev, v[0] * (float)right_sign(), v[1], v[2], v[3], v[4]);
 }
+static void play_shaped(const float v[5], float spring_coeff, float spring_dead) {
+    ffb_apply_shaped(&dev, v[0] * (float)right_sign(), v[1], spring_coeff, spring_dead, v[2], v[3], v[4]);
+}
 
 /* ---------------- direction check: a short push each way, hands off ----------------
  * 0-300 ms nothing (baseline), 300-550 ms +level, 550-900 ms nothing, 900-1150 ms -level,
@@ -425,12 +442,14 @@ static void tick(void) {
         cal.running = false;
     }
     if (test_until) {
-        if (now < test_until) { play(test_v); memcpy(out, test_v, sizeof out); return; }
+        if (now < test_until) { play(test_v); memcpy(out, test_v, sizeof out); out_coeff = -1; out_dead = 0; return; }
         test_until = 0;
     }
     Peer *p = owner >= 0 && peers[owner].used ? &peers[owner] : NULL;
     /* A page that stops talking (frozen tab, sleep) must not leave a force on the wheel. */
     bool live = p && p->live && now - p->last_ms < 300 && S.enabled;
+    out_coeff = -1;
+    out_dead = 0;
     if (!live) {
         smoothed = 0;
         memset(out, 0, sizeof out);
@@ -444,14 +463,21 @@ static void tick(void) {
         float base = clampf(S.minSpring, 0, 1);
         out[0] = clampf(smoothed * s, -1, 1);
         out[1] = clampf(fmaxf(p->f[1] * S.springGain, base) * s, 0, 1);
+        /* A shaped spring scales as a whole: its strongest force and its slope by the same gain, so
+         * the wheel keeps the game's curve. The base spring (minSpring) stays linear and takes over
+         * only when it is the stronger of the two. */
+        if (p->shaped && p->f[1] > 0 && p->f[1] * S.springGain >= base) {
+            out_coeff = clampf(p->slope * S.springGain * s, 0, 1);
+            out_dead = p->dead;
+        }
         out[2] = clampf(p->f[2] * S.damperGain * s, 0, 1);
         out[3] = clampf(p->f[3] * S.frictionGain * s, 0, 1);
         out[4] = clampf(p->f[4] * S.rumbleGain * s, 0, 1);
     }
-    play(out);
+    play_shaped(out, out_coeff, out_dead);
 
     /* Every 10 s of racing, one log line: enough to see in a report what reached the wheel. */
-    static struct { Uint64 t0; int ticks, live; float raw, wheel, spring, rumble; } st;
+    static struct { Uint64 t0; int ticks, live, shaped; float raw, wheel, spring, rumble, dead; } st;
     if (!st.t0) st.t0 = now;
     st.ticks++;
     if (live) {
@@ -460,16 +486,25 @@ static void tick(void) {
         st.wheel = fmaxf(st.wheel, fabsf(out[0]));
         st.spring = fmaxf(st.spring, out[1]);
         st.rumble = fmaxf(st.rumble, out[4]);
+        if (out_coeff >= 0) { st.shaped++; st.dead = out_dead; }
     }
     if (now - st.t0 >= 10000) {
         if (st.live)
-            SDL_Log("ffb %s: live %d%%, torque max game %.2f -> wheel %.2f (level sign %+d%s), spring %.2f, vibration %.2f, wheel %s, update errors %u",
+            SDL_Log("ffb %s: live %d%%, torque max game %.2f -> wheel %.2f (level sign %+d%s), spring %.2f%s, vibration %.2f, wheel %s, update errors %u",
                     p ? p->game : "?", st.live * 100 / (st.ticks ? st.ticks : 1), st.raw, st.wheel, right_sign(),
-                    dev.joy && wheel_dir_get(dev.name) ? " measured" : " default", st.spring, st.rumble,
+                    dev.joy && wheel_dir_get(dev.name) ? " measured" : " default", st.spring, st.shaped ? " (arcade shape)" : "", st.rumble,
                     ffb_has_wheel(&dev) ? dev.name : "none", (unsigned)dev.update_errors);
         memset(&st, 0, sizeof st);
         st.t0 = now;
     }
+}
+
+/* A game is racing (its forces reach the wheel) or was a moment ago. */
+static bool racing(void) {
+    Uint64 now = SDL_GetTicks();
+    for (int i = 0; i < MAX_CLIENTS; i++)
+        if (peers[i].used && peers[i].kind == CLIENT_GAME && peers[i].live && now - peers[i].last_ms < 2000) return true;
+    return false;
 }
 
 /* ---------------- settings page state ---------------- */
@@ -489,13 +524,23 @@ static void broadcast_state(void) {
         if (!p->used || p->kind != CLIENT_GAME) continue;
         char org[256];
         json_escape(p->origin, org, sizeof org);
-        PUT("%s{\"id\":\"%s\",\"origin\":\"%s\",\"live\":%s,\"active\":%s,\"age\":%llu,\"raw\":[%.3f,%.3f,%.3f,%.3f,%.3f]}",
+        PUT("%s{\"id\":\"%s\",\"origin\":\"%s\",\"live\":%s,\"active\":%s,\"age\":%llu,\"raw\":[%.3f,%.3f,%.3f,%.3f,%.3f],\"springShape\":",
             first ? "" : ",", p->game, org, p->live && now - p->last_ms < 300 ? "true" : "false", i == owner ? "true" : "false",
             (unsigned long long)(now - p->last_ms), p->f[0], p->f[1], p->f[2], p->f[3], p->f[4]);
+        if (p->shaped) PUT("{\"dead\":%.3f,\"slope\":%.2f}}", p->dead, p->slope);
+        else PUT("null}");
         first = false;
     }
     PUT("],\"out\":[%.3f,%.3f,%.3f,%.3f,%.3f],\"testing\":%s,", out[0], out[1], out[2], out[3], out[4], test_until ? "true" : "false");
+    if (out_coeff >= 0) PUT("\"outSpring\":{\"slope\":%.3f,\"dead\":%.3f},", out_coeff, out_dead);
+    else PUT("\"outSpring\":null,");
     PUT("\"calib\":{\"running\":%s,\"result\":\"%s\"},", cal.running ? "true" : "false", cal.result);
+    {
+        char latest[32], msg[256], m[600];
+        UpdState us = updater_status(latest, sizeof latest, msg, sizeof msg);
+        json_escape(msg, m, sizeof m);
+        PUT("\"update\":{\"state\":\"%s\",\"latest\":\"%s\",\"message\":\"%s\"},", updater_state_name(us), latest, m);
+    }
     /* device */
     if (dev.joy) {
         char name[256], fj[256];
@@ -594,8 +639,13 @@ static bool http_get(const char *path, HttpBody *r) {
     os_version(os, sizeof os);
     int v = SDL_GetVersion();
     bput(&b, "Arcade FFB Helper problem report\n================================\n");
-    bput(&b, "Created: %s\nHelper:  %s, SDL %d.%d.%d\nSystem:  %s\nRunning: %llu s\n\n", now, HELPER_VERSION,
+    bput(&b, "Created: %s\nHelper:  %s, SDL %d.%d.%d\nSystem:  %s\nRunning: %llu s\n", now, HELPER_VERSION,
          SDL_VERSIONNUM_MAJOR(v), SDL_VERSIONNUM_MINOR(v), SDL_VERSIONNUM_MICRO(v), os, (unsigned long long)(SDL_GetTicks() / 1000));
+    {
+        char latest[32], msg[256];
+        UpdState us = updater_status(latest, sizeof latest, msg, sizeof msg);
+        bput(&b, "Updates: %s%s%s%s%s\n\n", updater_state_name(us), latest[0] ? ", latest " : "", latest, msg[0] ? ", " : "", msg);
+    }
 
     bput(&b, "Wheel in use\n");
     if (dev.joy) {
@@ -631,9 +681,12 @@ static bool http_get(const char *path, HttpBody *r) {
         bput(&b, "  %s from %s, %s, last message %llu ms ago, forces %.3f %.3f %.3f %.3f %.3f%s\n", p->game[0] ? p->game : "?", p->origin,
              p->live ? "racing" : "menu/pause", (unsigned long long)(t - p->last_ms), p->f[0], p->f[1], p->f[2], p->f[3], p->f[4],
              i == owner ? " (drives the wheel)" : "");
+        if (p->shaped) bput(&b, "    shaped spring: dead zone %.3f, slope %.2f\n", p->dead, p->slope);
     }
     if (!games) bput(&b, "  none\n");
     bput(&b, "  to the wheel now: torque %.3f, spring %.3f, damper %.3f, friction %.3f, vibration %.3f\n", out[0], out[1], out[2], out[3], out[4]);
+    if (out_coeff >= 0) bput(&b, "  spring shape to the wheel: saturation %.3f, slope %.3f, dead zone %.3f\n", out[1], out_coeff, out_dead);
+    else bput(&b, "  spring shape to the wheel: linear\n");
 
     bput(&b, "\nSettings\n");
     for (int i = 0; i < NFIELDS; i++) {
@@ -720,7 +773,13 @@ static SDL_Surface *make_icon(void) {
 
 int main(int argc, char **argv) {
     bool background = false;
-    for (int i = 1; i < argc; i++) if (!strcmp(argv[i], "--background")) background = true;
+    const char *updated_to = NULL;   /* --updated <tag>: started by the previous version after an update */
+    const char *pretend = NULL;      /* --pretend-version <x.y.z>: test the update from an older version */
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--background")) background = true;
+        else if (!strcmp(argv[i], "--updated") && i + 1 < argc) updated_to = argv[++i];
+        else if (!strcmp(argv[i], "--pretend-version") && i + 1 < argc) pretend = argv[++i];
+    }
 
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_RAWINPUT, "0"); /* the DirectInput path carries wheel FFB */
@@ -733,7 +792,10 @@ int main(int argc, char **argv) {
     load_settings();
 
     ServerConfig cfg = {allow_game_origin, on_open, on_text, on_close, UI_PAGE, sizeof UI_PAGE - 1, http_get};
-    if (!server_start(PORT, &cfg)) {
+    bool listening = server_start(PORT, &cfg);
+    /* After an update the previous version may still be letting go of the port. */
+    for (int i = 0; !listening && updated_to && i < 40; i++) { SDL_Delay(250); listening = server_start(PORT, &cfg); }
+    if (!listening) {
         /* Port taken: most likely the helper is already running. Show its page. */
         if (!background) open_settings();
         return 0;
@@ -757,6 +819,9 @@ int main(int argc, char **argv) {
     int v = SDL_GetVersion();
     SDL_Log("Arcade FFB Helper %s, SDL %d.%d.%d, http://127.0.0.1:%d/", HELPER_VERSION,
             SDL_VERSIONNUM_MAJOR(v), SDL_VERSIONNUM_MINOR(v), SDL_VERSIONNUM_MICRO(v), PORT);
+    if (updated_to) SDL_Log("update: started as %s after an update", updated_to);
+    if (pretend) SDL_Log("update: testing, acting as version %s", pretend);
+    updater_start(pretend ? pretend : HELPER_VERSION, pref_dir, updated_to, S.autoUpdate);
 
     SDL_Surface *icon = make_icon();
     SDL_Tray *tray = SDL_CreateTray(icon, "Arcade FFB Helper");
@@ -773,7 +838,8 @@ int main(int argc, char **argv) {
     open_wanted_device();
     if (!background && S.openOnStart) open_settings();
 
-    Uint64 last_tick = 0, last_state = 0;
+    Uint64 last_tick = 0, last_state = 0, last_update = 0;
+    bool restart = false;
     while (running) {
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
@@ -792,10 +858,23 @@ int main(int argc, char **argv) {
         now = SDL_GetTicksNS();
         if (now - last_tick >= 8000000ull) { last_tick = now; SDL_UpdateJoysticks(); tick(); }
         if (now - last_state >= 50000000ull) { last_state = now; broadcast_state(); }
+        /* A downloaded update goes in between races: never while a game drives the wheel, a
+         * direction check or a test runs. The game pages reconnect to the new version by themselves. */
+        if (now - last_update >= 1000000000ull) {
+            last_update = now;
+            updater_enable(S.autoUpdate);
+            if (S.autoUpdate && !racing() && !cal.running && !test_until &&
+                updater_status(NULL, 0, NULL, 0) == UPD_READY && updater_install()) {
+                restart = true;
+                running = false;
+            }
+        }
     }
     ffb_apply(&dev, 0, 0, 0, 0, 0);
     ffb_close(&dev);
     server_stop();
+    /* Wheel and port are free now: start the new version. */
+    if (restart && !updater_relaunch()) SDL_Log("update: could not start the helper again; open it by hand");
     if (tray) SDL_DestroyTray(tray);
     if (icon) SDL_DestroySurface(icon);
     SDL_Quit();
